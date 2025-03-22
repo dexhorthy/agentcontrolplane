@@ -2,23 +2,15 @@ package taskrun
 
 import (
 	"context"
-	"fmt"
-	"strings"
-	"time"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	kubechainv1alpha1 "github.com/humanlayer/smallchain/kubechain/api/v1alpha1"
-	"github.com/humanlayer/smallchain/kubechain/internal/llmclient"
 	testutils "github.com/humanlayer/smallchain/kubechain/test/utils"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 var _ = Describe("TaskRun Controller", func() {
@@ -26,7 +18,6 @@ var _ = Describe("TaskRun Controller", func() {
 		const resourceName = "test-taskrun"
 		const taskName = "test-task"
 		const agentName = "test-agent"
-		const taskRunName = "test-taskrun"
 
 		ctx := context.Background()
 
@@ -36,6 +27,17 @@ var _ = Describe("TaskRun Controller", func() {
 		}
 
 		BeforeEach(func() {
+			// Clean up any existing TaskRun
+			existingTaskRun := &kubechainv1alpha1.TaskRun{}
+			var err error // Declare err at the start
+			err = k8sClient.Get(ctx, typeNamespacedName, existingTaskRun)
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, existingTaskRun)).To(Succeed())
+				Eventually(func() error {
+					return k8sClient.Get(ctx, typeNamespacedName, existingTaskRun)
+				}).Should(HaveOccurred())
+			}
+
 			// Create test Agent
 			By("Creating a test Agent")
 			agent := &kubechainv1alpha1.Agent{
@@ -57,6 +59,28 @@ var _ = Describe("TaskRun Controller", func() {
 			agent.Status.Status = "Ready"
 			agent.Status.StatusDetail = "Ready for testing"
 			Expect(k8sClient.Status().Update(ctx, agent)).To(Succeed())
+
+			// Create test Task
+			By("Creating a test Task")
+			task := &kubechainv1alpha1.Task{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      taskName,
+					Namespace: "default",
+				},
+				Spec: kubechainv1alpha1.TaskSpec{
+					AgentRef: kubechainv1alpha1.LocalObjectReference{
+						Name: agentName,
+					},
+					Message: "Test task",
+				},
+			}
+			Expect(k8sClient.Create(ctx, task)).To(Succeed())
+
+			// Mark Task as ready
+			task.Status.Ready = true
+			task.Status.Status = "Ready"
+			task.Status.StatusDetail = "Ready for testing"
+			Expect(k8sClient.Status().Update(ctx, task)).To(Succeed())
 		})
 
 		AfterEach(func() {
@@ -70,9 +94,16 @@ var _ = Describe("TaskRun Controller", func() {
 
 			By("Cleanup the test Task")
 			task := &kubechainv1alpha1.Task{}
-			err = k8sClient.Get(ctx, typeNamespacedName, task)
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: taskName, Namespace: "default"}, task)
 			if err == nil {
 				Expect(k8sClient.Delete(ctx, task)).To(Succeed())
+			}
+
+			By("Cleanup the test TaskRun")
+			taskRun := &kubechainv1alpha1.TaskRun{}
+			err = k8sClient.Get(ctx, typeNamespacedName, taskRun)
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, taskRun)).To(Succeed())
 			}
 		})
 
@@ -110,7 +141,8 @@ var _ = Describe("TaskRun Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updatedTaskRun.Status.Ready).To(BeTrue())
 			Expect(updatedTaskRun.Status.Status).To(Equal("Ready"))
-			Expect(updatedTaskRun.Status.StatusDetail).To(Equal("Task Run Created"))
+			Expect(updatedTaskRun.Status.StatusDetail).To(Equal("Ready to send to LLM"))
+			Expect(updatedTaskRun.Status.Phase).To(Equal(kubechainv1alpha1.TaskRunPhaseReadyForLLM))
 
 			By("checking that validation success event was created")
 			testutils.ExpectEvent(eventRecorder).ToEmitEventContaining("ValidationSucceeded")

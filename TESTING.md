@@ -126,7 +126,8 @@ Expect(updatedResource.Status.Ready).To(BeTrue())
 
 4. **Event Verification**:
 ```go
-Expect(<-eventRecorder.Events).To(ContainSubstring("Expected Event"))
+By("Verifying events were emitted")
+testutils.ExpectEvent(eventRecorder).ToEmitEventContaining("Expected Event")
 ```
 
 ### Error Case Testing
@@ -205,12 +206,21 @@ It("should successfully reconcile when all dependencies are ready", func() {
 })
 ```
 
+6. **Event Verification**: Use the ExpectEvent helper for consistent event checking:
+```go
+// Import the helper
+testutils "github.com/humanlayer/smallchain/kubechain/test/utils"
+
+// Use it in tests
+testutils.ExpectEvent(eventRecorder).ToEmitEventContaining("ValidationSucceeded")
+```
+
 ## Why This Approach Works
 
 1. **Maintainability**: Helper structs and clear test steps make tests easy to maintain
 2. **Reliability**: Consistent cleanup prevents test interference
 3. **Readability**: "By" blocks and clear structure make tests self-documenting
 4. **Debuggability**: Clear test steps make it easy to identify failure points
-5. **Reusability**: Helper structs can be reused across test suites
+5. **Reusability**: Helper structs and utilities can be reused across test suites
 
 Remember: Tests are documentation. Write them with the same care as production code.
