@@ -214,6 +214,19 @@ spec:
               ready:
                 description: Ready indicates if the TaskRun is ready to be executed
                 type: boolean
+              spanContext:
+                description: SpanContext contains the OpenTelemetry trace context
+                properties:
+                  spanID:
+                    description: SpanID is the span ID
+                    type: string
+                  traceID:
+                    description: TraceID is the trace ID of the span
+                    type: string
+                required:
+                - spanID
+                - traceID
+                type: object
               startTime:
                 description: StartTime is when the TaskRun started
                 format: date-time

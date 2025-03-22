@@ -18,6 +18,7 @@ import (
 
 	"github.com/humanlayer/smallchain/kubechain/internal/adapters"
 	"github.com/humanlayer/smallchain/kubechain/internal/llmclient"
+	"go.opentelemetry.io/otel"
 )
 
 // TaskRunReconciler reconciles a TaskRun object
@@ -59,6 +60,33 @@ func (r *TaskRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// Create a copy for status update
 	statusUpdate := taskRun.DeepCopy()
+
+	// Initialize phase if not set
+	if statusUpdate.Status.Phase == "" {
+		// Start tracing the TaskRun
+		tracer := otel.GetTracerProvider().Tracer("taskrun")
+		ctx, span := tracer.Start(ctx, "TaskRun")
+
+		// Store span context in status
+		spanCtx := span.SpanContext()
+		statusUpdate.Status.SpanContext = &kubechainv1alpha1.SpanContext{
+			TraceID: spanCtx.TraceID().String(),
+			SpanID:  spanCtx.SpanID().String(),
+		}
+
+		statusUpdate.Status.Phase = kubechainv1alpha1.TaskRunPhasePending
+		statusUpdate.Status.Ready = false
+		statusUpdate.Status.Status = "Pending"
+		statusUpdate.Status.StatusDetail = "Initializing"
+		if err := r.Status().Update(ctx, statusUpdate); err != nil {
+			span.End() // End span on error
+			logger.Error(err, "Failed to update TaskRun status")
+			return ctrl.Result{}, err
+		}
+
+		// Don't end the span - it will be ended when we reach FinalAnswer
+		return ctrl.Result{Requeue: true}, nil
+	}
 
 	// Get parent Task
 	task, err := r.getTask(ctx, &taskRun)
@@ -126,7 +154,7 @@ func (r *TaskRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Initialize phase if not set
-	if statusUpdate.Status.Phase == "" || statusUpdate.Status.Phase == kubechainv1alpha1.TaskRunPhasePending {
+	if statusUpdate.Status.Phase == "" {
 		statusUpdate.Status.Phase = kubechainv1alpha1.TaskRunPhaseReadyForLLM
 		statusUpdate.Status.Ready = true
 		statusUpdate.Status.ContextWindow = []kubechainv1alpha1.Message{
@@ -183,7 +211,7 @@ func (r *TaskRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 		if allComplete {
 			logger.Info("All tool calls complete, transitioning to ReadyForLLM")
-			// All tool calls are complete, update context window and move back to ReadyForLLM phase
+			// All tool calls are complete, update context window and move back to ReadyForLLLM phase
 			// so that the LLM can process the tool results and provide a final answer
 			statusUpdate := taskRun.DeepCopy()
 			for _, toolResult := range toolResults {

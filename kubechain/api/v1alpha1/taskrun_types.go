@@ -114,6 +114,19 @@ type TaskRunStatus struct {
 	// Error message if the task failed
 	// +optional
 	Error string `json:"error,omitempty"`
+
+	// SpanContext contains the OpenTelemetry trace context
+	// +optional
+	SpanContext *SpanContext `json:"spanContext,omitempty"`
+}
+
+// SpanContext contains OpenTelemetry trace context information
+type SpanContext struct {
+	// TraceID is the trace ID of the span
+	TraceID string `json:"traceID"`
+
+	// SpanID is the span ID
+	SpanID string `json:"spanID"`
 }
 
 // TaskRunPhase represents the phase of a TaskRun
