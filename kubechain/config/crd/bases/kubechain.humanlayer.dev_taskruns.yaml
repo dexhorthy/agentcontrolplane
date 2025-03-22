@@ -210,6 +210,7 @@ spec:
                 - FinalAnswer
                 - ErrorBackoff
                 - Failed
+                - Initializing
                 type: string
               ready:
                 description: Ready indicates if the TaskRun is ready to be executed
@@ -237,6 +238,7 @@ spec:
                 - Ready
                 - Error
                 - Pending
+                - Initializing
                 type: string
               statusDetail:
                 description: StatusDetail provides additional details about the current

@@ -21,7 +21,59 @@ import (
 	"github.com/humanlayer/smallchain/kubechain/test/utils"
 )
 
+//todo move this
+
 var _ = Describe("TaskRun Controller", func() {
+	Context("'' -> Pending", func() {
+		const resourceName = "test-taskrun"
+		const taskName = "test-task"
+		const agentName = "test-agent"
+		const taskRunName = "test-taskrun"
+		ctx := context.Background()
+
+		typeNamespacedName := types.NamespacedName{
+			Name:      resourceName,
+			Namespace: "default",
+		}
+		FIt("Should set a span for the taskrun and requeue", func() {
+			By("creating the taskrun")
+			taskRun := &kubechainv1alpha1.TaskRun{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      taskRunName,
+					Namespace: "default",
+				},
+				Spec: kubechainv1alpha1.TaskRunSpec{
+					TaskRef: kubechainv1alpha1.LocalObjectReference{
+						Name: taskName,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, taskRun)).To(Succeed())
+
+			By("reconciling the taskrun")
+			eventRecorder := record.NewFakeRecorder(10)
+			reconciler := &TaskRunReconciler{
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
+				recorder: eventRecorder,
+			}
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Requeue).To(BeTrue())
+
+			By("checking the taskrun status")
+			updatedTaskRun := &kubechainv1alpha1.TaskRun{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, updatedTaskRun)).To(Succeed())
+			Expect(updatedTaskRun.Status.Phase).To(Equal(kubechainv1alpha1.TaskRunPhaseInitializing))
+			Expect(updatedTaskRun.Status.Status).To(Equal("Initializing"))
+			Expect(updatedTaskRun.Status.StatusDetail).To(Equal("Initializing"))
+			Expect(updatedTaskRun.Status.SpanContext.SpanID).NotTo(BeEmpty())
+			Expect(updatedTaskRun.Status.SpanContext.TraceID).NotTo(BeEmpty())
+		})
+
+	})
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-taskrun"
 		const taskName = "test-task"

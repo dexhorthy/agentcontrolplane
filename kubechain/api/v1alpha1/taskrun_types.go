@@ -81,7 +81,7 @@ type TaskRunStatus struct {
 	Ready bool `json:"ready,omitempty"`
 
 	// Status indicates the current status of the taskrun
-	// +kubebuilder:validation:Enum=Ready;Error;Pending
+	// +kubebuilder:validation:Enum=Ready;Error;Pending;Initializing
 	Status string `json:"status,omitempty"`
 
 	// StatusDetail provides additional details about the current status
@@ -130,10 +130,12 @@ type SpanContext struct {
 }
 
 // TaskRunPhase represents the phase of a TaskRun
-// +kubebuilder:validation:Enum=Pending;ReadyForLLM;SendContextWindowToLLM;ToolCallsPending;FinalAnswer;ErrorBackoff;Failed
+// +kubebuilder:validation:Enum=Pending;ReadyForLLM;SendContextWindowToLLM;ToolCallsPending;FinalAnswer;ErrorBackoff;Failed;Initializing
 type TaskRunPhase string
 
 const (
+	// TaskRunPhaseInitializing indicates the TaskRun is initializing
+	TaskRunPhaseInitializing TaskRunPhase = "Initializing"
 	// TaskRunPhasePending indicates the TaskRun is pending execution
 	TaskRunPhasePending TaskRunPhase = "Pending"
 	// TaskRunPhaseReadyForLLM indicates the TaskRun is ready for context to be sent to LLM

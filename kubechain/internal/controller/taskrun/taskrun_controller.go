@@ -74,9 +74,9 @@ func (r *TaskRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			SpanID:  spanCtx.SpanID().String(),
 		}
 
-		statusUpdate.Status.Phase = kubechainv1alpha1.TaskRunPhasePending
+		statusUpdate.Status.Phase = kubechainv1alpha1.TaskRunPhaseInitializing
 		statusUpdate.Status.Ready = false
-		statusUpdate.Status.Status = "Pending"
+		statusUpdate.Status.Status = "Initializing"
 		statusUpdate.Status.StatusDetail = "Initializing"
 		if err := r.Status().Update(ctx, statusUpdate); err != nil {
 			span.End() // End span on error
