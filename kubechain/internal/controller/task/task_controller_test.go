@@ -2,17 +2,15 @@ package task
 
 import (
 	"context"
-	"strings"
-	"time"
 
+	kubechainv1alpha1 "github.com/humanlayer/smallchain/kubechain/api/v1alpha1"
+	testutils "github.com/humanlayer/smallchain/kubechain/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	kubechainv1alpha1 "github.com/humanlayer/smallchain/kubechain/api/v1alpha1"
 )
 
 var _ = Describe("Task Controller", func() {
@@ -28,29 +26,9 @@ var _ = Describe("Task Controller", func() {
 		}
 
 		BeforeEach(func() {
-			// Clean up any existing resources first
-			By("Cleaning up any existing resources")
-			agent := &kubechainv1alpha1.Agent{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      agentName,
-					Namespace: "default",
-				},
-			}
-			_ = k8sClient.Delete(ctx, agent)
-			time.Sleep(100 * time.Millisecond)
-
-			task := &kubechainv1alpha1.Task{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName,
-					Namespace: "default",
-				},
-			}
-			_ = k8sClient.Delete(ctx, task)
-			time.Sleep(100 * time.Millisecond)
-
 			// Create test Agent
 			By("Creating a test Agent")
-			agent = &kubechainv1alpha1.Agent{
+			agent := &kubechainv1alpha1.Agent{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      agentName,
 					Namespace: "default",
@@ -126,24 +104,10 @@ var _ = Describe("Task Controller", func() {
 			Expect(updatedTask.Status.StatusDetail).To(Equal("Task Run Created"))
 
 			By("checking that TaskRun creation event was created")
-			Eventually(func() bool {
-				select {
-				case event := <-eventRecorder.Events:
-					return strings.Contains(event, "TaskRunCreated")
-				default:
-					return false
-				}
-			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Expected to find TaskRun creation event")
+			testutils.ExpectEvent(eventRecorder).ToEmitEventContaining("TaskRunCreated")
 
 			By("checking that validation success event was created")
-			Eventually(func() bool {
-				select {
-				case event := <-eventRecorder.Events:
-					return strings.Contains(event, "ValidationSucceeded")
-				default:
-					return false
-				}
-			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Expected to find validation success event")
+			testutils.ExpectEvent(eventRecorder).ToEmitEventContaining("ValidationSucceeded")
 		})
 
 		It("should fail validation with non-existent agent", func() {
@@ -185,14 +149,7 @@ var _ = Describe("Task Controller", func() {
 			Expect(updatedTask.Status.StatusDetail).To(ContainSubstring(`"nonexistent-agent" not found`))
 
 			By("checking that a failure event was created")
-			Eventually(func() bool {
-				select {
-				case event := <-eventRecorder.Events:
-					return strings.Contains(event, "ValidationFailed")
-				default:
-					return false
-				}
-			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Expected to find failure event")
+			testutils.ExpectEvent(eventRecorder).ToEmitEventContaining("ValidationFailed")
 		})
 	})
 })

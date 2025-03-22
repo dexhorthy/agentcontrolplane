@@ -2,17 +2,15 @@ package agent
 
 import (
 	"context"
-	"strings"
-	"time"
 
+	kubechainv1alpha1 "github.com/humanlayer/smallchain/kubechain/api/v1alpha1"
+	testutils "github.com/humanlayer/smallchain/kubechain/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	kubechainv1alpha1 "github.com/humanlayer/smallchain/kubechain/api/v1alpha1"
 )
 
 var _ = Describe("Agent Controller", func() {
@@ -139,14 +137,7 @@ var _ = Describe("Agent Controller", func() {
 			}))
 
 			By("checking that a success event was created")
-			Eventually(func() bool {
-				select {
-				case event := <-eventRecorder.Events:
-					return strings.Contains(event, "ValidationSucceeded")
-				default:
-					return false
-				}
-			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Expected to find success event")
+			testutils.ExpectEvent(eventRecorder).ToEmitEventContaining("ValidationSucceeded")
 		})
 
 		It("should fail validation with non-existent LLM", func() {
@@ -188,14 +179,7 @@ var _ = Describe("Agent Controller", func() {
 			Expect(updatedAgent.Status.StatusDetail).To(ContainSubstring(`"nonexistent-llm" not found`))
 
 			By("checking that a failure event was created")
-			Eventually(func() bool {
-				select {
-				case event := <-eventRecorder.Events:
-					return strings.Contains(event, "ValidationFailed")
-				default:
-					return false
-				}
-			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Expected to find failure event")
+			testutils.ExpectEvent(eventRecorder).ToEmitEventContaining("ValidationFailed")
 		})
 
 		It("should fail validation with non-existent Tool", func() {
@@ -240,14 +224,7 @@ var _ = Describe("Agent Controller", func() {
 			Expect(updatedAgent.Status.StatusDetail).To(ContainSubstring(`"nonexistent-tool" not found`))
 
 			By("checking that a failure event was created")
-			Eventually(func() bool {
-				select {
-				case event := <-eventRecorder.Events:
-					return strings.Contains(event, "ValidationFailed")
-				default:
-					return false
-				}
-			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Expected to find failure event")
+			testutils.ExpectEvent(eventRecorder).ToEmitEventContaining("ValidationFailed")
 		})
 	})
 })

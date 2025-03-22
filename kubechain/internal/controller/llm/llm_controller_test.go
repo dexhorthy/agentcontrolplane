@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	kubechainv1alpha1 "github.com/humanlayer/smallchain/kubechain/api/v1alpha1"
+	testutils "github.com/humanlayer/smallchain/kubechain/test/utils" // Regular import
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -31,8 +33,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	kubechainv1alpha1 "github.com/humanlayer/smallchain/kubechain/api/v1alpha1"
 )
 
 var _ = Describe("LLM Controller", func() {
@@ -136,14 +136,7 @@ var _ = Describe("LLM Controller", func() {
 			Expect(updatedLLM.Status.StatusDetail).To(Equal("OpenAI API key validated successfully"))
 
 			By("checking that a success event was created")
-			Eventually(func() bool {
-				select {
-				case event := <-eventRecorder.Events:
-					return strings.Contains(event, "ValidationSucceeded")
-				default:
-					return false
-				}
-			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Expected to find success event")
+			testutils.ExpectEvent(eventRecorder).ToEmitEventContaining("ValidationSucceeded")
 		})
 
 		It("should fail reconciliation with invalid API key", func() {

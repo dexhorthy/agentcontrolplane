@@ -167,6 +167,7 @@ Alternatively, clean up components individually:
 - Use dependency injection for controllers
 - Test with Ginkgo/Gomega framework
 - Document public functions with godoc
+- For structs with public fields and clear intent, don't create constructor functions. Just use a struct literal.
 
 ### TypeScript
 - Use 2-space indentation
