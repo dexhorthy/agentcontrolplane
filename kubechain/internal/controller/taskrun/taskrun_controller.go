@@ -633,9 +633,120 @@ func (r *TaskRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// Create a copy for status update
 	statusUpdate := taskRun.DeepCopy()
 
+	newStatus, result, err := r.doReconcile(ctx, &taskRun)
+
+	if newStatus.Status != "" {
+		statusUpdate.Status.Status = newStatus.Status
+	}
+	if newStatus.Phase != "" {
+		statusUpdate.Status.Phase = newStatus.Phase
+	}
+	if newStatus.Ready != false {
+		statusUpdate.Status.Ready = newStatus.Ready
+	}
+	if newStatus.Error != "" {
+		statusUpdate.Status.Error = newStatus.Error
+	}
+	if newStatus.Output != "" {
+		statusUpdate.Status.Output = newStatus.Output
+	}
+	if newStatus.ContextWindow != nil {
+		statusUpdate.Status.ContextWindow = newStatus.ContextWindow
+	}
+	if newStatus.MessageCount != 0 {
+		statusUpdate.Status.MessageCount = newStatus.MessageCount
+	}
+	if newStatus.StatusDetail != "" {
+		statusUpdate.Status.StatusDetail = newStatus.StatusDetail
+	}
+	if newStatus.StartTime != nil {
+		statusUpdate.Status.StartTime = newStatus.StartTime
+	}
+	if newStatus.CompletionTime != nil {
+		statusUpdate.Status.CompletionTime = newStatus.CompletionTime
+	}
+	if newStatus.ToolCallRequestID != "" {
+		statusUpdate.Status.ToolCallRequestID = newStatus.ToolCallRequestID
+	}
+	if newStatus.SpanContext != nil {
+		statusUpdate.Status.SpanContext = newStatus.SpanContext
+	}
+	if newStatus.UserMsgPreview != "" {
+		statusUpdate.Status.UserMsgPreview = newStatus.UserMsgPreview
+	}
+
+	// Send status update
+	if err := r.Status().Update(ctx, statusUpdate); err != nil {
+		logger.Error(err, "Failed to update TaskRun status")
+		return ctrl.Result{}, err
+	}
+
+	return result, err
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *TaskRunReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.recorder = mgr.GetEventRecorderFor("taskrun-controller")
+	if r.newLLMClient == nil {
+		r.newLLMClient = llmclient.NewRawOpenAIClient
+	}
+
+	// Initialize MCPManager if not already set
+	if r.MCPManager == nil {
+		r.MCPManager = mcpmanager.NewMCPServerManager()
+	}
+
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&kubechainv1alpha1.TaskRun{}).
+		Complete(r)
+}
+
+func (r *TaskRunReconciler) doReconcile(ctx context.Context, taskRun *kubechainv1alpha1.TaskRun) (kubechainv1alpha1.TaskRunStatus, ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	statusUpdate := taskRun.DeepCopy()
+
 	// Initialize phase if not set
-	if statusUpdate.Status.Phase == "" {
-		return r.initializePhaseAndSpan(ctx, statusUpdate)
+	if taskRun.Status.Phase == "" {
+		// Start tracing the TaskRun
+		tracer := r.Tracer
+		if tracer == nil {
+			tracer = otel.GetTracerProvider().Tracer("taskrun")
+		}
+
+		// Make sure we provide a meaningful span name that includes the TaskRun name
+		spanName := fmt.Sprintf("TaskRun/%s", taskRun.Name)
+		_, span := tracer.Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindServer))
+
+		// We need to explicitly end the span so the root span is properly recorded
+		// This is not what we want long-term, but it ensures spans show up correctly
+		// while we resolve the issue with maintaining spans across reconciliation calls
+		defer span.End()
+
+		// Store span context in status
+		spanCtx := span.SpanContext()
+
+		// Set useful attributes on the span
+		span.SetAttributes(
+			attribute.String("taskrun.name", taskRun.Name),
+			attribute.String("taskrun.namespace", taskRun.Namespace),
+			attribute.String("taskrun.uid", string(taskRun.UID)),
+		)
+
+		// By ending the span now, we ensure it's properly recorded
+		// This approach creates a separate span for each reconciliation rather than
+		// a single span that covers the entire TaskRun lifecycle
+		span.SetStatus(codes.Ok, "TaskRun initialized")
+
+		statusUpdate.Status.Phase = kubechainv1alpha1.TaskRunPhaseInitializing
+		statusUpdate.Status.Ready = false
+		statusUpdate.Status.Status = kubechainv1alpha1.TaskRunStatusStatusPending
+		statusUpdate.Status.StatusDetail = "Initializing"
+		statusUpdate.Status.SpanContext = &kubechainv1alpha1.SpanContext{
+			TraceID: spanCtx.TraceID().String(),
+			SpanID:  spanCtx.SpanID().String(),
+		}
+		return statusUpdate.Status, ctrl.Result{Requeue: true}, nil
 	}
 
 	// Skip reconciliation for terminal states
@@ -777,21 +888,4 @@ func (r *TaskRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		"ready", statusUpdate.Status.Ready,
 		"phase", statusUpdate.Status.Phase)
 	return ctrl.Result{}, nil
-}
-
-// SetupWithManager sets up the controller with the Manager.
-func (r *TaskRunReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.recorder = mgr.GetEventRecorderFor("taskrun-controller")
-	if r.newLLMClient == nil {
-		r.newLLMClient = llmclient.NewRawOpenAIClient
-	}
-
-	// Initialize MCPManager if not already set
-	if r.MCPManager == nil {
-		r.MCPManager = mcpmanager.NewMCPServerManager()
-	}
-
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&kubechainv1alpha1.TaskRun{}).
-		Complete(r)
 }
