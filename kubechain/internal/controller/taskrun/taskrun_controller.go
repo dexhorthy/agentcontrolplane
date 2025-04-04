@@ -635,6 +635,10 @@ func (r *TaskRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	newStatus, result, err := r.doReconcile(ctx, &taskRun)
 
+	if newStatus == nil {
+		return result, err
+	}
+
 	if newStatus.Status != "" {
 		statusUpdate.Status.Status = newStatus.Status
 	}
@@ -701,10 +705,8 @@ func (r *TaskRunReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *TaskRunReconciler) doReconcile(ctx context.Context, taskRun *kubechainv1alpha1.TaskRun) (kubechainv1alpha1.TaskRunStatus, ctrl.Result, error) {
+func (r *TaskRunReconciler) doReconcile(ctx context.Context, taskRun *kubechainv1alpha1.TaskRun) (*kubechainv1alpha1.TaskRunStatus, ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-
-	statusUpdate := taskRun.DeepCopy()
 
 	// Initialize phase if not set
 	if taskRun.Status.Phase == "" {
@@ -738,21 +740,22 @@ func (r *TaskRunReconciler) doReconcile(ctx context.Context, taskRun *kubechainv
 		// a single span that covers the entire TaskRun lifecycle
 		span.SetStatus(codes.Ok, "TaskRun initialized")
 
-		statusUpdate.Status.Phase = kubechainv1alpha1.TaskRunPhaseInitializing
-		statusUpdate.Status.Ready = false
-		statusUpdate.Status.Status = kubechainv1alpha1.TaskRunStatusStatusPending
-		statusUpdate.Status.StatusDetail = "Initializing"
-		statusUpdate.Status.SpanContext = &kubechainv1alpha1.SpanContext{
-			TraceID: spanCtx.TraceID().String(),
-			SpanID:  spanCtx.SpanID().String(),
-		}
-		return statusUpdate.Status, ctrl.Result{Requeue: true}, nil
+		return kubechainv1alpha1.TaskRunStatus{
+			Phase:        kubechainv1alpha1.TaskRunPhaseInitializing,
+			Ready:        false,
+			Status:       kubechainv1alpha1.TaskRunStatusStatusPending,
+			StatusDetail: "Initializing",
+			SpanContext: &kubechainv1alpha1.SpanContext{
+				TraceID: spanCtx.TraceID().String(),
+				SpanID:  spanCtx.SpanID().String(),
+			},
+		}, ctrl.Result{Requeue: true}, nil
 	}
 
 	// Skip reconciliation for terminal states
-	if statusUpdate.Status.Phase == kubechainv1alpha1.TaskRunPhaseFinalAnswer || statusUpdate.Status.Phase == kubechainv1alpha1.TaskRunPhaseFailed {
-		logger.V(1).Info("TaskRun in terminal state, skipping reconciliation", "phase", statusUpdate.Status.Phase)
-		return ctrl.Result{}, nil
+	if taskRun.Status.Phase == kubechainv1alpha1.TaskRunPhaseFinalAnswer || taskRun.Status.Phase == kubechainv1alpha1.TaskRunPhaseFailed {
+		logger.V(1).Info("TaskRun in terminal state, skipping reconciliation", "phase", taskRun.Status.Phase)
+		return kubechainv1alpha1.TaskRunStatus{}, ctrl.Result{}, nil
 	}
 
 	// Step 1: Validate Task and Agent
