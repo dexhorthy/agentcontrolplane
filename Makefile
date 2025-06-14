@@ -52,7 +52,7 @@ setup: ## Create isolated kind cluster for this branch and set up dependencies
 		mkdir -p acp/tmp && \
 		export KIND_APISERVER_PORT && export ACP_SERVER_PORT && \
 		npx envsubst < acp-example/kind/kind-config.template.yaml > acp/tmp/kind-config.yaml && \
-		if grep -q "hostPort: *$" acp/tmp/kind-config.yaml; then \
+		if grep -q "hostPort: *$$" acp/tmp/kind-config.yaml; then \
 			echo "ERROR: Empty hostPort found in generated config. Variables not substituted properly."; \
 			echo "Generated config:"; \
 			cat acp/tmp/kind-config.yaml; \
@@ -71,19 +71,6 @@ setup: ## Create isolated kind cluster for this branch and set up dependencies
 	@kind export kubeconfig --name ${clustername} --kubeconfig .kube/config
 	@echo "Kubeconfig exported to .kube/config"
 	
-	# Create .envrc for automatic KUBECONFIG
-	@echo '#!/bin/bash' > .envrc
-	@echo '# Automatically set KUBECONFIG to use the isolated cluster for this worktree' >> .envrc
-	@echo 'export KUBECONFIG="$$(pwd)/.kube/config"' >> .envrc
-	@echo '' >> .envrc
-	@echo '# Verify the cluster exists and is accessible' >> .envrc
-	@echo 'if [ -f "$$KUBECONFIG" ]; then' >> .envrc
-	@echo '    echo "🔧 Using isolated cluster: $$(kubectl config current-context 2>/dev/null || echo '\''cluster not ready'\'')"' >> .envrc
-	@echo 'else' >> .envrc
-	@echo '    echo "⚠️  No local kubeconfig found. Run '\''make setup'\'' to create isolated cluster."' >> .envrc
-	@echo 'fi' >> .envrc
-	@chmod +x .envrc
-	@echo "Created .envrc for automatic KUBECONFIG setup"
 	
 	# Create secrets with API keys
 	@if [ -n "${OPENAI_API_KEY:-}" ]; then \
@@ -133,10 +120,6 @@ teardown: ## Teardown the isolated kind cluster and clean up
 		echo "Removing local kubeconfig"; \
 		rm -f .kube/config; \
 		rmdir .kube 2>/dev/null || true; \
-	fi
-	@if [ -f .envrc ]; then \
-		echo "Removing .envrc"; \
-		rm -f .envrc; \
 	fi
 	
 	@echo "✅ Teardown complete!"
