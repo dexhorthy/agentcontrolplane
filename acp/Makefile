@@ -81,7 +81,7 @@ test: mocks manifests generate fmt vet setup-envtest ## Run tests.
 
 .PHONY: test-e2e-framework
 test-e2e-framework: mocks manifests generate fmt vet setup-envtest ## Run the new envtest-based e2e framework tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./test/e2e/framework -v -ginkgo.v -timeout=60s
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./test/e2e/framework/getting_started -v -ginkgo.v -timeout=60s
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.

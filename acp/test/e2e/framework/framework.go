@@ -75,7 +75,7 @@ func (f *TestFramework) doStart() error {
 
 	// Setup envtest environment
 	f.TestEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
 	}
 
@@ -103,11 +103,11 @@ func (f *TestFramework) doStart() error {
 		return fmt.Errorf("failed to create client: %w", err)
 	}
 
-	// Create manager with proper options  
+	// Create manager with proper options
 	f.Manager, err = ctrl.NewManager(f.Config, ctrl.Options{
 		Scheme:                 scheme.Scheme,
-		HealthProbeBindAddress: "0",      // Disable health probes
-		LeaderElection:         false,    // Disable leader election in tests
+		HealthProbeBindAddress: "0",   // Disable health probes
+		LeaderElection:         false, // Disable leader election in tests
 		Metrics: metricsserver.Options{
 			BindAddress: "0", // Disable metrics
 		},
@@ -177,7 +177,7 @@ func (f *TestFramework) WaitForControllersReady(ctx context.Context) error {
 	case <-time.After(10 * time.Second):
 		return fmt.Errorf("timeout waiting for controllers to be ready")
 	}
-	
+
 	// Additional time for controllers to initialize
 	time.Sleep(100 * time.Millisecond)
 	return nil
@@ -187,7 +187,7 @@ func (f *TestFramework) WaitForControllersReady(ctx context.Context) error {
 func (f *TestFramework) setupControllers() error {
 	// Create shared MCP manager for testing
 	mcpManagerInstance := mcpmanager.NewMCPServerManagerWithClient(f.Manager.GetClient())
-	
+
 	// Create no-op tracer for testing
 	noopTracer := noop.NewTracerProvider().Tracer("test")
 
@@ -242,7 +242,7 @@ func (f *TestFramework) setupControllers() error {
 // Helper function from existing patterns
 func getFirstFoundEnvTestBinaryDir() string {
 	// This mirrors the pattern from the existing suite_test.go files
-	basePath := filepath.Join("..", "..", "..", "bin", "k8s")
+	basePath := filepath.Join("..", "..", "..", "..", "bin", "k8s")
 	entries, err := filepath.Glob(filepath.Join(basePath, "*"))
 	if err != nil {
 		return ""

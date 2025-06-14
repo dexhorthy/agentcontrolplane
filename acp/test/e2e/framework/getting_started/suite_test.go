@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package framework
+package getting_started
 
 import (
 	"testing"
@@ -24,22 +24,24 @@ import (
 	. "github.com/onsi/gomega"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/humanlayer/agentcontrolplane/acp/test/e2e/framework"
 )
 
 var (
-	testFramework *TestFramework
+	testFramework *framework.TestFramework
 )
 
-func TestE2EFramework(t *testing.T) {
+func TestGettingStarted(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "E2E Framework Suite")
+	RunSpecs(t, "Getting Started E2E Suite")
 }
 
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	By("creating test framework")
-	testFramework = NewTestFramework()
+	testFramework = framework.NewTestFramework()
 
 	By("starting test framework with all controllers")
 	err := testFramework.Start()
