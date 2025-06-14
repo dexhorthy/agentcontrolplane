@@ -83,15 +83,15 @@ All agents must commit every 5-10 minutes after meaningful progress. No work >10
 ## Example Usage
 ```bash
 # Launch a single integration testing agent
-./hack/launch_coding_workers.sh acp-integration-testing-claude plan-integration-testing.md
+./hack/launch_coding_workers.sh integration-testing plan-integration-testing.md
 
 # Launch multiple agents (each adds a new window to acp-agents session)
-./hack/launch_coding_workers.sh acp-kind-isolated-claude plan-agent-kind-isolated.md
-./hack/launch_coding_workers.sh acp-e2e-framework-claude plan-agent-e2e-framework.md
-./hack/launch_coding_workers.sh acp-mcp-transport-claude plan-agent-mcp-transport.md
+./hack/launch_coding_workers.sh kind-isolated plan-agent-kind-isolated.md
+./hack/launch_coding_workers.sh e2e-framework plan-agent-e2e-framework.md
+./hack/launch_coding_workers.sh mcp-transport plan-agent-mcp-transport.md
 
 # Clean up everything
-./cleanup_coding_workers.sh
+./cleanup_coding_workers.sh integration-testing
 ```
 
 ## Implementation Notes
@@ -109,29 +109,25 @@ When you need to add another agent to an already running session:
 
 ```bash
 # 1. Create worktree manually
-./hack/create_worktree.sh acp-newfeature-dev
+./hack/create_worktree.sh newfeature
 
 # 2. Copy plan file to worktree
-cp plan-newfeature.md /Users/dex/.humanlayer/worktrees/agentcontrolplane_acp-newfeature-dev/
+cp plan-newfeature.md /Users/dex/.humanlayer/worktrees/agentcontrolplane_newfeature/
 
 # 3. Create prompt file
-cat > /Users/dex/.humanlayer/worktrees/agentcontrolplane_acp-newfeature-dev/prompt.md << 'EOF'
+cat > /Users/dex/.humanlayer/worktrees/agentcontrolplane_newfeature/prompt.md << 'EOF'
 Adopt the persona from hack/agent-developer.md
 Your task is to implement the features described in plan-newfeature.md
 [... standard prompt content ...]
 EOF
 
 # 4. Add new tmux window (increment window number)
-tmux new-window -t acp-coding-dev:9 -n "plan-newfeature" -c "/Users/dex/.humanlayer/worktrees/agentcontrolplane_acp-newfeature-dev"
+tmux new-window -t acp-agents:9 -n "newfeature" -c "/Users/dex/.humanlayer/worktrees/agentcontrolplane_newfeature"
 
-# 5. Split and setup panes
-tmux split-window -t acp-coding-dev:9 -v -c "/Users/dex/.humanlayer/worktrees/agentcontrolplane_acp-newfeature-dev"
-tmux send-keys -t acp-coding-dev:9.1 "echo 'Troubleshooting terminal'" C-m
-tmux send-keys -t acp-coding-dev:9.1 "git status" C-m
-tmux select-pane -t acp-coding-dev:9.2
-tmux send-keys -t acp-coding-dev:9.2 'claude "$(cat prompt.md)"' C-m
+# 5. Setup window
+tmux send-keys -t acp-agents:9 'claude "$(cat prompt.md)"' C-m
 sleep 1
-tmux send-keys -t acp-coding-dev:9.2 C-m
+tmux send-keys -t acp-agents:9 C-m
 ```
 
 ### Monitoring Agent Progress
@@ -140,7 +136,7 @@ tmux send-keys -t acp-coding-dev:9.2 C-m
 tmux list-windows -t acp-agents
 
 # Check commits on agent branches
-for branch in acp-kind-isolated-claude acp-e2e-framework-claude acp-mcp-transport-claude; do
+for branch in kind-isolated e2e-framework mcp-transport; do
   echo "=== $branch ==="
   git log --oneline -3 $branch
 done
@@ -151,15 +147,14 @@ tmux attach -t acp-agents
 # Use Ctrl-b [window-number] to switch
 
 # Monitor merge agent activity
-git log --oneline -10 acp-merge-claude
-git log --oneline -10 acp-merge-cb
+git log --oneline -10 integration-testing
 ```
 
 ### Updating Merge Agent's Plan
 When adding new branches for the merge agent to monitor:
 ```bash
 # Edit the merge agent's plan directly
-vim /Users/dex/.humanlayer/worktrees/agentcontrolplane_acp-merge-dev/plan-merge-agent.md
+vim /Users/dex/.humanlayer/worktrees/agentcontrolplane_merge/plan-merge-agent.md
 
 # The merge agent will pick up changes on its next monitoring cycle
 ```
@@ -167,26 +162,26 @@ vim /Users/dex/.humanlayer/worktrees/agentcontrolplane_acp-merge-dev/plan-merge-
 ### Emergency Stop/Restart
 ```bash
 # Kill a specific window (agent)
-tmux kill-window -t acp-coding-dev:5
+tmux kill-window -t acp-agents:5
 
 # Restart an agent in existing window
-tmux respawn-pane -t acp-coding-dev:5.2 -c "/path/to/worktree"
-tmux send-keys -t acp-coding-dev:5.2 'claude "$(cat prompt.md)"' C-m
+tmux respawn-pane -t acp-agents:5.2 -c "/path/to/worktree"
+tmux send-keys -t acp-agents:5.2 'claude "$(cat prompt.md)"' C-m
 
 # Kill entire session
-tmux kill-session -t acp-coding-dev
+tmux kill-session -t acp-agents
 ```
 
 ### Debugging Agent Issues
 ```bash
 # View agent's terminal output
-tmux capture-pane -t acp-coding-dev:3.2 -p | less
+tmux capture-pane -t acp-agents:3.2 -p | less
 
 # Check worktree status
-git worktree list | grep acp-
+git worktree list | grep agentcontrolplane_
 
 # View agent's git status
-cd /Users/dex/.humanlayer/worktrees/agentcontrolplane_acp-srs-dev
+cd /Users/dex/.humanlayer/worktrees/agentcontrolplane_integration-testing
 git status
 git log --oneline -5
 ```

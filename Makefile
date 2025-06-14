@@ -37,20 +37,21 @@ setup: ## Create isolated kind cluster for this branch and set up dependencies
 	@echo "DIRNAME: ${dirname}"
 	@echo "CLUSTER: ${clustername}"
 	
-	# Create kind cluster with unique name and dynamic port
+	# Generate dynamic ports and store in .ports.env
+	@apiport=$$(./hack/find_free_port.sh 11000 11100); \
+	acpport=$$(./hack/find_free_port.sh 11100 11200); \
+	echo "KIND_APISERVER_PORT=$$apiport" > .ports.env; \
+	echo "ACP_SERVER_PORT=$$acpport" >> .ports.env; \
+	echo "Generated ports:"; \
+	cat .ports.env
+	
+	# Create kind cluster with dynamic port configuration
 	@if ! kind get clusters | grep -q "^${clustername}$$"; then \
 		echo "Creating kind cluster: ${clustername}"; \
-		apiport=$$(./hack/find_free_port.sh 11000 11100); \
-		acpport=$$(./hack/find_free_port.sh 11100 11200); \
-		echo "API PORT: $$apiport"; \
-		echo "ACP PORT: $$acpport"; \
-		if [ -f hack/kind-config.template.yaml ]; then \
-			sed -e "s/APIPORT/$$apiport/g" -e "s/ACPPORT/$$acpport/g" hack/kind-config.template.yaml > /tmp/kind-config-${clustername}.yaml; \
-			kind create cluster --name ${clustername} --config /tmp/kind-config-${clustername}.yaml; \
-			rm -f /tmp/kind-config-${clustername}.yaml; \
-		else \
-			kind create cluster --name ${clustername}; \
-		fi; \
+		source .ports.env && \
+		mkdir -p acp/tmp && \
+		npx envsubst < acp-example/kind/kind-config.template.yaml > acp/tmp/kind-config.yaml && \
+		kind create cluster --name ${clustername} --config acp/tmp/kind-config.yaml; \
 	else \
 		echo "Kind cluster already exists: ${clustername}"; \
 	fi

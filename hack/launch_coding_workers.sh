@@ -27,7 +27,7 @@ warn() {
 # Parse arguments
 if [ $# -ne 2 ]; then
     echo "Usage: $0 <branch_name> <plan_file>"
-    echo "Example: $0 acp-integration-testing-claude plan-integration-testing.md"
+    echo "Example: $0 integration-testing plan-integration-testing.md"
     exit 1
 fi
 
@@ -66,6 +66,18 @@ create_worktree() {
     
     # Copy plan file
     cp "$PLAN_FILE" "$worktree_dir/"
+    
+    # Run make setup to create isolated cluster
+    log "Setting up isolated cluster in worktree..."
+    cd "$worktree_dir"
+    if ! make setup; then
+        error "Setup failed. Cleaning up worktree..."
+        cd - > /dev/null
+        git worktree remove --force "$worktree_dir" 2>/dev/null || rm -rf "$worktree_dir"
+        git branch -D "$BRANCH_NAME" 2>/dev/null || true
+        exit 1
+    fi
+    cd - > /dev/null
     
     # Create prompt.md file based on plan type
     if [[ "$PLAN_FILE" == "plan-integration-testing.md" ]]; then
@@ -110,7 +122,7 @@ EOF
 # Main execution
 main() {
     local worktree_dir="${WORKTREES_BASE}/${REPO_NAME}_${BRANCH_NAME}"
-    local window_name=$(basename "$PLAN_FILE" .md | sed 's/plan-//' | sed 's/-claude$//')
+    local window_name=$(basename "$PLAN_FILE" .md | sed 's/plan-//')
     
     log "Starting single worker: $BRANCH_NAME with plan: $PLAN_FILE"
     
@@ -163,7 +175,7 @@ main() {
     echo "  tmux select-window -t $TMUX_SESSION:$window_name"
     echo
     echo "To clean up later:"
-    echo "  ./cleanup_coding_workers.sh"
+    echo "  ./cleanup_coding_workers.sh $window_name"
 }
 
 # Run main

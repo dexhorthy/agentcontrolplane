@@ -247,11 +247,16 @@ deploy-local-kind: manifests docker-build docker-load-kind kustomize ## Deploy c
 		echo "Error: Kind cluster '${clustername}' not found. Please run 'make setup' first."; \
 		exit 1; \
 	fi
-	if [ ! -f config/localdev/kustomization.yaml ]; then \
-		cp config/localdev/kustomization.tpl.yaml config/localdev/kustomization.yaml; \
+	@if [ -f ../.ports.env ]; then \
+		source ../.ports.env && \
+		mkdir -p tmp && \
+		npx envsubst < config/localdev/kustomization.tpl.yaml > tmp/kustomization.yaml; \
+	else \
+		echo "Warning: .ports.env not found, using template directly"; \
+		cp config/localdev/kustomization.tpl.yaml tmp/kustomization.yaml; \
 	fi
-	cd config/localdev && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/localdev | $(KUBECTL) apply -f - --namespace=$(namespace)
+	cd tmp && $(KUSTOMIZE) edit set image controller=${IMG}
+	$(KUSTOMIZE) build tmp | $(KUBECTL) apply -f - --namespace=$(namespace)
 
 .PHONY: deploy-samples
 deploy-samples: kustomize ## Deploy samples to the K8s cluster specified in ~/.kube/config.

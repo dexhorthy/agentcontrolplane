@@ -1,6 +1,6 @@
 #!/bin/bash
-# cleanup_coding_workers.sh - Cleans up worktree environments, tmux sessions, and kind clusters
-# Usage: ./cleanup_coding_workers.sh [suffix] [--tmux-only|--worktrees-only|--clusters-only]
+# cleanup_coding_workers.sh - Cleans up a specific worker's worktree, tmux window, and kind cluster
+# Usage: ./cleanup_coding_workers.sh <window_name>
 
 set -euo pipefail
 
@@ -28,72 +28,55 @@ info() {
     echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')] INFO:${NC} $1"
 }
 
-# Parse arguments  
-if [[ "$1" =~ ^--.*$ ]]; then
-    # First argument is a mode flag
-    CLEANUP_MODE="${1:-all}"
-    SUFFIX=""
-elif [[ "$2" =~ ^--.*$ ]]; then
-    # First argument is suffix, second is mode
-    SUFFIX="$1"
-    CLEANUP_MODE="${2:-all}"
-else
-    # Default behavior
-    CLEANUP_MODE="${1:-all}"
-    SUFFIX="${2:-}"
+# Parse arguments
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 <window_name>"
+    echo "Example: $0 integration-testing"
+    exit 1
 fi
+
+WINDOW_NAME="$1"
 
 # Configuration
 REPO_NAME="agentcontrolplane"
 WORKTREES_BASE="$HOME/.humanlayer/worktrees"
-
-# Configuration
 TMUX_SESSION="acp-agents"
-declare -a BRANCH_NAMES=(
-    "acp-kind-isolated-claude"
-    "acp-e2e-framework-claude" 
-    "acp-mcp-transport-claude"
-    "acp-integration-testing-claude"
-    "acp-kind-isolated-cb"
-    "acp-e2e-framework-cb"
-    "acp-mcp-transport-cb"
-    "acp-integration-testing-cb"
-    "acp-merge-claude"
-    "acp-merge-cb"
-)
 
-# Function to kill tmux session
-cleanup_tmux() {
+# Determine branch name from window name
+BRANCH_NAME="${WINDOW_NAME}"
+
+# Main execution
+main() {
+    local worktree_dir="${WORKTREES_BASE}/${REPO_NAME}_${BRANCH_NAME}"
+    
+    log "Cleaning up worker: $WINDOW_NAME (branch: $BRANCH_NAME)"
+    
+    # Kill tmux window
     if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
-        log "Killing tmux session: $TMUX_SESSION"
-        tmux kill-session -t "$TMUX_SESSION"
+        if tmux list-windows -t "$TMUX_SESSION" -F "#{window_name}" | grep -q "^${WINDOW_NAME}$"; then
+            log "Killing tmux window: $TMUX_SESSION:$WINDOW_NAME"
+            tmux kill-window -t "$TMUX_SESSION:$WINDOW_NAME"
+        else
+            info "Tmux window not found: $TMUX_SESSION:$WINDOW_NAME"
+        fi
     else
         info "Tmux session not found: $TMUX_SESSION"
     fi
-}
-
-# Function to delete kind cluster
-delete_cluster() {
-    local branch_name=$1
-    local cluster_name="acp-${branch_name}"
     
-    if kind get clusters 2>/dev/null | grep -q "^${cluster_name}$"; then
-        log "Deleting kind cluster: $cluster_name"
-        kind delete cluster --name "$cluster_name" || warn "Failed to delete cluster: $cluster_name"
-    else
-        info "Kind cluster not found: $cluster_name"
-    fi
-}
-
-# Function to remove worktree
-remove_worktree() {
-    local branch_name=$1
-    local worktree_dir="${WORKTREES_BASE}/${REPO_NAME}_${branch_name}"
-    
+    # Remove worktree and cluster
     if [ -d "$worktree_dir" ]; then
         log "Removing worktree: $worktree_dir"
-        # Fix permissions before removal to handle any permission issues
-        chmod -R 755 "$worktree_dir" 2>/dev/null || warn "Failed to fix permissions on $worktree_dir"
+        
+        # Run make teardown to clean up isolated cluster
+        log "Running teardown in worktree: $worktree_dir"
+        cd "$worktree_dir" 2>/dev/null && {
+            if [ -f "Makefile" ]; then
+                make teardown 2>/dev/null || warn "Failed to run make teardown in $worktree_dir"
+            fi
+            cd - > /dev/null
+        }
+        
+        # Remove worktree
         git worktree remove --force "$worktree_dir" 2>/dev/null || {
             warn "Failed to remove worktree with git, removing directory manually"
             rm -rf "$worktree_dir"
@@ -101,132 +84,18 @@ remove_worktree() {
     else
         info "Worktree not found: $worktree_dir"
     fi
-}
-
-# Function to delete branch
-delete_branch() {
-    local branch_name=$1
     
-    if git show-ref --verify --quiet "refs/heads/${branch_name}"; then
-        log "Deleting branch: $branch_name"
-        git branch -D "$branch_name" 2>/dev/null || warn "Failed to delete branch: $branch_name"
+    # Delete branch
+    if git show-ref --verify --quiet "refs/heads/${BRANCH_NAME}"; then
+        log "Deleting branch: $BRANCH_NAME"
+        git branch -D "$BRANCH_NAME" 2>/dev/null || warn "Failed to delete branch: $BRANCH_NAME"
     else
-        info "Branch not found: $branch_name"
+        info "Branch not found: $BRANCH_NAME"
     fi
-}
-
-# Function to cleanup kind clusters
-cleanup_clusters() {
-    if [ -z "$SUFFIX" ]; then
-        warn "No suffix provided, cleaning up all acp-* clusters"
-        local clusters=$(kind get clusters 2>/dev/null | grep "^acp-" || true)
-        if [ -z "$clusters" ]; then
-            info "No acp-* kind clusters found"
-        else
-            for cluster in $clusters; do
-                log "Deleting kind cluster: $cluster"
-                kind delete cluster --name "$cluster" || warn "Failed to delete cluster: $cluster"
-            done
-        fi
-    else
-        for branch_name in "${BRANCH_NAMES[@]}"; do
-            delete_cluster "$branch_name"
-        done
-        # Also clean up the main branch cluster
-        delete_cluster "$(git branch --show-current)"
-    fi
-}
-
-# Function to cleanup all worktrees
-cleanup_worktrees() {
-    for branch_name in "${BRANCH_NAMES[@]}"; do
-        remove_worktree "$branch_name"
-        delete_branch "$branch_name"
-    done
     
     # Prune worktree list
     log "Pruning git worktree list..."
     git worktree prune
-}
-
-# Function to show usage
-usage() {
-    echo "Usage: $0 [suffix] [--tmux-only|--worktrees-only|--clusters-only]"
-    echo
-    echo "Options:"
-    echo "  suffix              - The suffix used when launching workers (optional)"
-    echo "  --tmux-only         - Only clean up tmux sessions"
-    echo "  --worktrees-only    - Only clean up worktrees and branches"
-    echo "  --clusters-only     - Only clean up kind clusters"
-    echo
-    echo "If no suffix is provided, will clean up all acp-* sessions, worktrees, and clusters"
-    echo
-    echo "Examples:"
-    echo "  $0                      # Clean up all acp-* sessions, worktrees, and clusters"
-    echo "  $0 1234                # Clean up specific suffix"
-    echo "  $0 1234 --tmux-only    # Only clean up tmux for suffix 1234"
-    echo "  $0 --clusters-only     # Only clean up all acp-* kind clusters"
-}
-
-# Main execution
-main() {
-    log "Starting cleanup_coding_workers.sh"
-    
-    if [ "$CLEANUP_MODE" == "--help" ] || [ "$CLEANUP_MODE" == "-h" ]; then
-        usage
-        exit 0
-    fi
-    
-    # Status report before cleanup
-    info "=== Current Status ==="
-    echo "Tmux sessions:"
-    tmux list-sessions 2>/dev/null | grep "acp-agents" || echo "  None found"
-    echo
-    echo "Git worktrees:"
-    git worktree list | grep -E "acp-.*-(claude|cb)" || echo "  None found"
-    echo
-    echo "Kind clusters:"
-    kind get clusters 2>/dev/null | grep "^acp-" || echo "  None found"
-    echo
-    
-    # Perform cleanup based on mode
-    case "$CLEANUP_MODE" in
-        --tmux-only)
-            log "Cleaning up tmux sessions only..."
-            cleanup_tmux
-            ;;
-        --worktrees-only)
-            log "Cleaning up worktrees only..."
-            cleanup_worktrees
-            ;;
-        --clusters-only)
-            log "Cleaning up kind clusters only..."
-            cleanup_clusters
-            ;;
-        all|"")
-            log "Cleaning up everything..."
-            cleanup_tmux
-            cleanup_worktrees
-            cleanup_clusters
-            ;;
-        *)
-            error "Unknown cleanup mode: $CLEANUP_MODE"
-            usage
-            exit 1
-            ;;
-    esac
-    
-    # Status report after cleanup
-    info "=== Status After Cleanup ==="
-    echo "Tmux sessions:"
-    tmux list-sessions 2>/dev/null | grep "acp-agents" || echo "  None found"
-    echo
-    echo "Git worktrees:"
-    git worktree list | grep -E "acp-.*-(claude|cb)" || echo "  None found"
-    echo
-    echo "Kind clusters:"
-    kind get clusters 2>/dev/null | grep "^acp-" || echo "  None found"
-    echo
     
     log "✅ Cleanup completed successfully!"
 }
