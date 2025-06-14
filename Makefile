@@ -31,19 +31,26 @@ build: acp-build ## Build acp components
 branchname := $(shell git branch --show-current)
 dirname := $(shell basename ${PWD})
 clustername := acp-$(branchname)
-apiport := $(shell ./hack/find_free_port.sh 10000 10100)
 
 setup: ## Create isolated kind cluster for this branch and set up dependencies
 	@echo "BRANCH: ${branchname}"
 	@echo "DIRNAME: ${dirname}"
 	@echo "CLUSTER: ${clustername}"
-	@echo "API PORT: ${apiport}"
 	
 	# Create kind cluster with unique name and dynamic port
 	@if ! kind get clusters | grep -q "^${clustername}$$"; then \
 		echo "Creating kind cluster: ${clustername}"; \
-		kind create cluster --name ${clustername} \
-			--config <(sed 's/APIPORT/${apiport}/g' hack/kind-config.template.yaml || echo 'kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnodes:\n- role: control-plane\n  extraPortMappings:\n  - containerPort: 6443\n    hostPort: ${apiport}'); \
+		apiport=$$(./hack/find_free_port.sh 11000 11100); \
+		acpport=$$(./hack/find_free_port.sh 11100 11200); \
+		echo "API PORT: $$apiport"; \
+		echo "ACP PORT: $$acpport"; \
+		if [ -f hack/kind-config.template.yaml ]; then \
+			sed -e "s/APIPORT/$$apiport/g" -e "s/ACPPORT/$$acpport/g" hack/kind-config.template.yaml > /tmp/kind-config-${clustername}.yaml; \
+			kind create cluster --name ${clustername} --config /tmp/kind-config-${clustername}.yaml; \
+			rm -f /tmp/kind-config-${clustername}.yaml; \
+		else \
+			kind create cluster --name ${clustername}; \
+		fi; \
 	else \
 		echo "Kind cluster already exists: ${clustername}"; \
 	fi
@@ -51,7 +58,22 @@ setup: ## Create isolated kind cluster for this branch and set up dependencies
 	# Export kubeconfig to worktree-local location
 	@mkdir -p .kube
 	@kind export kubeconfig --name ${clustername} --kubeconfig .kube/config
+	@sed -i.bak 's|0.0.0.0:|127.0.0.1:|g' .kube/config && rm -f .kube/config.bak
 	@echo "Kubeconfig exported to .kube/config"
+	
+	# Create .envrc for automatic KUBECONFIG
+	@echo '#!/bin/bash' > .envrc
+	@echo '# Automatically set KUBECONFIG to use the isolated cluster for this worktree' >> .envrc
+	@echo 'export KUBECONFIG="$$(pwd)/.kube/config"' >> .envrc
+	@echo '' >> .envrc
+	@echo '# Verify the cluster exists and is accessible' >> .envrc
+	@echo 'if [ -f "$$KUBECONFIG" ]; then' >> .envrc
+	@echo '    echo "🔧 Using isolated cluster: $$(kubectl config current-context 2>/dev/null || echo '\''cluster not ready'\'')"' >> .envrc
+	@echo 'else' >> .envrc
+	@echo '    echo "⚠️  No local kubeconfig found. Run '\''make setup'\'' to create isolated cluster."' >> .envrc
+	@echo 'fi' >> .envrc
+	@chmod +x .envrc
+	@echo "Created .envrc for automatic KUBECONFIG setup"
 	
 	# Create secrets with API keys
 	@if [ -n "${OPENAI_API_KEY:-}" ]; then \
@@ -65,8 +87,49 @@ setup: ## Create isolated kind cluster for this branch and set up dependencies
 	fi
 	
 	# Set up acp dependencies
-	$(MAKE) -C $(ACP_DIR) mocks deps 
+	$(MAKE) -C $(ACP_DIR) mocks deps
+	
+	# Deploy ACP controller
+	@echo "Deploying ACP controller..."
+	$(MAKE) -C $(ACP_DIR) deploy-local-kind
+	
+	# Wait for controller to be ready
+	@echo "Waiting for ACP controller to be ready..."
+	@KUBECONFIG=.kube/config timeout 120 bash -c 'until kubectl get deployment acp-controller-manager -n default >/dev/null 2>&1; do echo "Waiting for deployment to be created..."; sleep 2; done'
+	@KUBECONFIG=.kube/config kubectl wait --for=condition=available --timeout=120s deployment/acp-controller-manager -n default
+	@echo "✅ ACP controller is ready!"
+	
+	@echo ""
+	@echo "✅ Setup complete! To use the isolated cluster:"
+	@echo "   source .envrc    # or use direnv for automatic loading"
+	@echo "   kubectl get nodes"
+	@echo "   kubectl get pods -n default  # Check ACP controller status" 
 
+
+teardown: ## Teardown the isolated kind cluster and clean up
+	@echo "BRANCH: ${branchname}"
+	@echo "CLUSTER: ${clustername}"
+	
+	# Delete kind cluster
+	@if kind get clusters | grep -q "^${clustername}$$"; then \
+		echo "Deleting kind cluster: ${clustername}"; \
+		kind delete cluster --name ${clustername}; \
+	else \
+		echo "Kind cluster '${clustername}' not found"; \
+	fi
+	
+	# Clean up local files
+	@if [ -f .kube/config ]; then \
+		echo "Removing local kubeconfig"; \
+		rm -f .kube/config; \
+		rmdir .kube 2>/dev/null || true; \
+	fi
+	@if [ -f .envrc ]; then \
+		echo "Removing .envrc"; \
+		rm -f .envrc; \
+	fi
+	
+	@echo "✅ Teardown complete!"
 
 check: 
 	# $(MAKE) -C $(ACP_DIR) fmt vet lint test generate 
