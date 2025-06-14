@@ -53,9 +53,11 @@ declare -a BRANCH_NAMES=(
     "acp-kind-isolated-claude"
     "acp-e2e-framework-claude" 
     "acp-mcp-transport-claude"
+    "acp-integration-testing-claude"
     "acp-kind-isolated-cb"
     "acp-e2e-framework-cb"
     "acp-mcp-transport-cb"
+    "acp-integration-testing-cb"
     "acp-merge-claude"
     "acp-merge-cb"
 )

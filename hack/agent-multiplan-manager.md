@@ -49,19 +49,14 @@ All agents must commit every 5-10 minutes after meaningful progress. No work >10
 ### Script Requirements
 
 #### launch_coding_workers.sh
-- Creates a fixed tmux session named `acp-agents`
-- Creates worktrees for both Claude and CB agents for each plan file:
-  - `acp-kind-isolated-claude` / `acp-kind-isolated-cb`
-  - `acp-e2e-framework-claude` / `acp-e2e-framework-cb`
-  - `acp-mcp-transport-claude` / `acp-mcp-transport-cb`
-  - `acp-merge-claude` / `acp-merge-cb`
-- Set up a single tmux session with 8 windows:
-  - Windows 1-3: Claude agents (auto-launch Claude Code)
-  - Windows 4-6: CB agents (ready for manual agent launch)  
-  - Windows 7-8: Merge agents (both auto-launch Claude Code)
-- Each window is named with task name and agent type (e.g., "kind-isolated-claude", "e2e-framework-cb", "merge-claude")
-- Copy respective plan file to each worktree
-- Generate specialized prompts for each plan file and agent type 
+- Takes two arguments: `<branch_name> <plan_file>`
+- Creates/uses fixed tmux session named `acp-agents`
+- Creates dedicated worktree for the specified branch
+- Adds new window to session (or creates session if first agent)
+- Auto-launches Claude Code with appropriate persona
+- Specialized prompts based on plan type (developer vs integration-tester)
+- Each agent gets isolated git worktree and dedicated cluster
+- Window names derived from plan file (e.g., "integration-testing", "kind-isolated") 
 
 #### cleanup_coding_workers.sh
 - Clean up all worktrees and branches
@@ -87,8 +82,13 @@ All agents must commit every 5-10 minutes after meaningful progress. No work >10
 
 ## Example Usage
 ```bash
-# Launch all coding workers (both Claude and CB) in one session
-./launch_coding_workers.sh
+# Launch a single integration testing agent
+./hack/launch_coding_workers.sh acp-integration-testing-claude plan-integration-testing.md
+
+# Launch multiple agents (each adds a new window to acp-agents session)
+./hack/launch_coding_workers.sh acp-kind-isolated-claude plan-agent-kind-isolated.md
+./hack/launch_coding_workers.sh acp-e2e-framework-claude plan-agent-e2e-framework.md
+./hack/launch_coding_workers.sh acp-mcp-transport-claude plan-agent-mcp-transport.md
 
 # Clean up everything
 ./cleanup_coding_workers.sh

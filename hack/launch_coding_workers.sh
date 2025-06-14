@@ -1,6 +1,6 @@
 #!/bin/bash
-# launch_coding_workers.sh - Sets up parallel work environments for executing code
-# Usage: ./launch_coding_workers.sh [suffix]
+# launch_coding_workers.sh - Launches a single coding agent with dedicated worktree and cluster
+# Usage: ./launch_coding_workers.sh <branch_name> <plan_file>
 
 set -euo pipefail
 
@@ -24,81 +24,76 @@ warn() {
     echo -e "${YELLOW}[$(date +'%Y-%m-%d %H:%M:%S')] WARN:${NC} $1"
 }
 
-# Get suffix argument
-SUFFIX="${1:-$(date +%s)}"
+# Parse arguments
+if [ $# -ne 2 ]; then
+    echo "Usage: $0 <branch_name> <plan_file>"
+    echo "Example: $0 acp-integration-testing-claude plan-integration-testing.md"
+    exit 1
+fi
 
-log "Using suffix: $SUFFIX"
+BRANCH_NAME="$1"
+PLAN_FILE="$2"
 
 # Configuration
 REPO_NAME="agentcontrolplane"
 WORKTREES_BASE="$HOME/.humanlayer/worktrees"
 TMUX_SESSION="acp-agents"
 
-# Define plan files and their configurations
-declare -a PLAN_FILES=(
-    "plan-agent-kind-isolated.md"
-    "plan-agent-e2e-framework.md"
-    "plan-agent-mcp-transport.md"
-)
-
-declare -a CLAUDE_BRANCH_NAMES=(
-    "acp-kind-isolated-claude"
-    "acp-e2e-framework-claude"
-    "acp-mcp-transport-claude"
-)
-
-declare -a CB_BRANCH_NAMES=(
-    "acp-kind-isolated-cb"
-    "acp-e2e-framework-cb"
-    "acp-mcp-transport-cb"
-)
-
-# Merge agent configuration
-MERGE_PLAN="plan-merge-agent.md"
-CLAUDE_MERGE_BRANCH="acp-merge-claude"
-CB_MERGE_BRANCH="acp-merge-cb"
-
 # Function to create worktree
 create_worktree() {
-    local branch_name=$1
-    local plan_file=$2
-    local worktree_dir="${WORKTREES_BASE}/${REPO_NAME}_${branch_name}"
+    local worktree_dir="${WORKTREES_BASE}/${REPO_NAME}_${BRANCH_NAME}"
     
-    log "Creating worktree for $branch_name..."
+    log "Creating worktree for $BRANCH_NAME..."
     
-    # Use create_worktree.sh if available
-    if [ -f "hack/create_worktree.sh" ]; then
-        ./hack/create_worktree.sh "$branch_name"
-    else
-        # Fallback to manual creation
-        if [ ! -d "$WORKTREES_BASE" ]; then
-            mkdir -p "$WORKTREES_BASE"
-        fi
-        
-        if [ -d "$worktree_dir" ]; then
-            warn "Worktree already exists: $worktree_dir"
-            return 0
-        fi
-        
-        git worktree add -b "$branch_name" "$worktree_dir" HEAD
-        
-        # Copy .claude directory
-        if [ -d ".claude" ]; then
-            cp -r .claude "$worktree_dir/"
-        fi
+    # Create worktrees directory
+    if [ ! -d "$WORKTREES_BASE" ]; then
+        mkdir -p "$WORKTREES_BASE"
+    fi
+    
+    # Remove existing worktree if it exists
+    if [ -d "$worktree_dir" ]; then
+        warn "Removing existing worktree: $worktree_dir"
+        git worktree remove --force "$worktree_dir" 2>/dev/null || rm -rf "$worktree_dir"
+    fi
+    
+    # Create new worktree
+    git worktree add -b "$BRANCH_NAME" "$worktree_dir" HEAD
+    
+    # Copy .claude directory
+    if [ -d ".claude" ]; then
+        cp -r .claude "$worktree_dir/"
     fi
     
     # Copy plan file
-    cp "$plan_file" "$worktree_dir/"
+    cp "$PLAN_FILE" "$worktree_dir/"
     
-    # Create prompt.md file
-    cat > "$worktree_dir/prompt.md" << EOF
-Adopt the persona from hack/agent-developer.md
+    # Create prompt.md file based on plan type
+    if [[ "$PLAN_FILE" == "plan-integration-testing.md" ]]; then
+        cat > "$worktree_dir/prompt.md" << 'EOF'
+Adopt the persona from hack/agent-integration-tester.md
 
-Your task is to implement the features described in $plan_file
+Your task is to run comprehensive integration tests as described in plan-integration-testing.md
 
 Key requirements:
-- Read and understand the plan in $plan_file
+- Read and understand the plan completely
+- Test all merged features thoroughly  
+- Use isolated kind cluster for testing
+- Document any issues in integration-test-issues.md
+- Follow getting-started.md completely
+- Test all MCP transport types
+- Verify human approval workflows
+- Clean up resources after testing
+
+Start by reading the plan file and understanding the testing strategy.
+EOF
+    else
+        cat > "$worktree_dir/prompt.md" << 'EOF'
+Adopt the persona from hack/agent-developer.md
+
+Your task is to implement the features described in the plan file
+
+Key requirements:
+- Read and understand the plan completely
 - Follow the Dan Abramov methodology
 - Commit your changes every 5-10 minutes
 - Run tests frequently
@@ -107,48 +102,17 @@ Key requirements:
 
 Start by reading the plan file and understanding the task ahead.
 EOF
+    fi
     
     log "Worktree created: $worktree_dir"
 }
 
-# Function to launch tmux window for agent
-launch_agent_window() {
-    local window_num=$1
-    local branch_name=$2
-    local plan_file=$3
-    local launch_claude=${4:-true}
-    local agent_type=${5:-"claude"}
-    local base_name="$(basename "$plan_file" .md | sed 's/plan-agent-//' | sed 's/plan-merge-agent/merge/')"
-    local window_name="${base_name}-${agent_type}"
-    local worktree_dir="${WORKTREES_BASE}/${REPO_NAME}_${branch_name}"
-    
-    log "Launching window $window_num: $window_name (claude: $launch_claude)"
-    
-    # Create window
-    if [ "$window_num" -eq 1 ]; then
-        tmux new-session -d -s "$TMUX_SESSION" -n "$window_name" -c "$worktree_dir"
-    else
-        tmux new-window -t "$TMUX_SESSION:$window_num" -n "$window_name" -c "$worktree_dir"
-    fi
-    
-    if [ "$launch_claude" = "true" ]; then
-        # Launch Claude Code directly in the window
-        tmux send-keys -t "$TMUX_SESSION:$window_num" "claude \"\$(cat prompt.md)\"" C-m
-        # Send newline to accept trust directory prompt
-        sleep 1
-        tmux send-keys -t "$TMUX_SESSION:$window_num" C-m
-    else
-        # Just show ready message for manual agent launch
-        tmux send-keys -t "$TMUX_SESSION:$window_num" "echo 'Ready for manual agent launch'" C-m
-        tmux send-keys -t "$TMUX_SESSION:$window_num" "echo 'Branch: $branch_name'" C-m
-        tmux send-keys -t "$TMUX_SESSION:$window_num" "echo 'Plan: $plan_file'" C-m
-        tmux send-keys -t "$TMUX_SESSION:$window_num" "echo 'To launch agent: claude \"\$(cat prompt.md)\"'" C-m
-    fi
-}
-
 # Main execution
 main() {
-    log "Starting launch_coding_workers.sh with suffix: $SUFFIX"
+    local worktree_dir="${WORKTREES_BASE}/${REPO_NAME}_${BRANCH_NAME}"
+    local window_name=$(basename "$PLAN_FILE" .md | sed 's/plan-//' | sed 's/-claude$//')
+    
+    log "Starting single worker: $BRANCH_NAME with plan: $PLAN_FILE"
     
     # Check prerequisites
     if ! command -v tmux &> /dev/null; then
@@ -161,111 +125,42 @@ main() {
         exit 1
     fi
     
-    # Kill existing session if it exists
-    if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
-        warn "Killing existing tmux session: $TMUX_SESSION"
-        tmux kill-session -t "$TMUX_SESSION"
+    if [ ! -f "$PLAN_FILE" ]; then
+        error "Plan file not found: $PLAN_FILE"
+        exit 1
     fi
     
-    # Create worktrees for all Claude agents
-    log "Creating Claude agent worktrees..."
-    for i in "${!PLAN_FILES[@]}"; do
-        create_worktree "${CLAUDE_BRANCH_NAMES[$i]}" "${PLAN_FILES[$i]}"
-    done
+    # Create worktree
+    create_worktree
     
-    # Create worktrees for all CB agents
-    log "Creating CB agent worktrees..."
-    for i in "${!PLAN_FILES[@]}"; do
-        create_worktree "${CB_BRANCH_NAMES[$i]}" "${PLAN_FILES[$i]}"
-    done
+    # Create session if it doesn't exist, otherwise add new window
+    if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+        log "Adding new window to existing session: $TMUX_SESSION"
+        tmux new-window -t "$TMUX_SESSION" -n "$window_name" -c "$worktree_dir"
+    else
+        log "Creating new tmux session: $TMUX_SESSION"
+        tmux new-session -d -s "$TMUX_SESSION" -n "$window_name" -c "$worktree_dir"
+    fi
     
-    # Create merge agent worktrees
-    log "Creating merge agent worktrees..."
-    create_worktree "$CLAUDE_MERGE_BRANCH" "$MERGE_PLAN"
-    create_worktree "$CB_MERGE_BRANCH" "$MERGE_PLAN"
-    
-    # Create Claude merge agent prompt
-    local claude_merge_worktree="${WORKTREES_BASE}/${REPO_NAME}_${CLAUDE_MERGE_BRANCH}"
-    cat > "$claude_merge_worktree/prompt.md" << EOF
-Adopt the persona from hack/agent-merger.md
-
-Your task is to merge the work from the following Claude agent branches into the current branch:
-${CLAUDE_BRANCH_NAMES[@]}
-
-Key requirements:
-- Read the plan in $MERGE_PLAN
-- Monitor agent branches for commits every 2 minutes
-- Merge changes in dependency order
-- Resolve conflicts appropriately
-- Maintain clean build state
-- Commit merged changes
-
-Start by reading the merge plan and checking the status of all agent branches.
-EOF
-
-    # Create CB merge agent prompt
-    local cb_merge_worktree="${WORKTREES_BASE}/${REPO_NAME}_${CB_MERGE_BRANCH}"
-    cat > "$cb_merge_worktree/prompt.md" << EOF
-Adopt the persona from hack/agent-merger.md
-
-Your task is to merge the work from the following CB agent branches into the current branch:
-${CB_BRANCH_NAMES[@]}
-
-Key requirements:
-- Read the plan in $MERGE_PLAN
-- Monitor agent branches for commits every 2 minutes
-- Merge changes in dependency order
-- Resolve conflicts appropriately
-- Maintain clean build state
-- Commit merged changes
-
-Start by reading the merge plan and checking the status of all agent branches.
-EOF
-    
-    # Launch agent windows
-    log "Launching tmux session: $TMUX_SESSION"
-    local window_num=1
-    
-    # Launch Claude agents
-    for i in "${!PLAN_FILES[@]}"; do
-        launch_agent_window "$window_num" "${CLAUDE_BRANCH_NAMES[$i]}" "${PLAN_FILES[$i]}" "true" "claude"
-        ((window_num++))
-    done
-    
-    # Launch CB agents
-    for i in "${!PLAN_FILES[@]}"; do
-        launch_agent_window "$window_num" "${CB_BRANCH_NAMES[$i]}" "${PLAN_FILES[$i]}" "false" "cb"
-        ((window_num++))
-    done
-    
-    # Launch merge agents
-    launch_agent_window "$window_num" "$CLAUDE_MERGE_BRANCH" "$MERGE_PLAN" "true" "claude-merge"
-    ((window_num++))
-    launch_agent_window "$window_num" "$CB_MERGE_BRANCH" "$MERGE_PLAN" "true" "cb-merge"
+    # Launch Claude Code in the current window
+    log "Starting Claude Code in worktree: $worktree_dir"
+    tmux send-keys -t "$TMUX_SESSION:$window_name" "claude \"\$(cat prompt.md)\"" C-m
+    sleep 1
+    tmux send-keys -t "$TMUX_SESSION:$window_name" C-m
     
     # Summary
-    log "✅ All coding workers launched successfully!"
+    log "✅ Worker launched successfully!"
     echo
     echo "Session: $TMUX_SESSION"
-    echo "Claude agents (windows 1-3):"
-    for i in "${!PLAN_FILES[@]}"; do
-        local task_name=$(basename "${PLAN_FILES[$i]}" .md | sed 's/plan-agent-//')
-        echo "  - Window $((i+1)): ${task_name}-claude (${CLAUDE_BRANCH_NAMES[$i]})"
-    done
-    echo "CB agents (windows 4-6):"
-    for i in "${!PLAN_FILES[@]}"; do
-        local task_name=$(basename "${PLAN_FILES[$i]}" .md | sed 's/plan-agent-//')
-        echo "  - Window $((i+4)): ${task_name}-cb (${CB_BRANCH_NAMES[$i]})"
-    done
-    echo "Merge agents:"
-    echo "  - Window 7: merge-claude ($CLAUDE_MERGE_BRANCH)"
-    echo "  - Window 8: merge-cb ($CB_MERGE_BRANCH)"
+    echo "Branch: $BRANCH_NAME"
+    echo "Plan: $PLAN_FILE"
+    echo "Worktree: $worktree_dir"
     echo
     echo "To attach to the session:"
     echo "  tmux attach -t $TMUX_SESSION"
     echo
-    echo "To switch between windows:"
-    echo "  Ctrl-b [window-number]"
+    echo "To switch to this window:"
+    echo "  tmux select-window -t $TMUX_SESSION:$window_name"
     echo
     echo "To clean up later:"
     echo "  ./cleanup_coding_workers.sh"
