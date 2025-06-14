@@ -190,7 +190,9 @@ func getFirstFoundEnvTestBinaryDir() string {
 		return ""
 	}
 	for _, entry := range entries {
-		return entry
+		if info, err := filepath.Glob(filepath.Join(entry, "*")); err == nil && len(info) > 0 {
+			return entry
+		}
 	}
 	return ""
 }

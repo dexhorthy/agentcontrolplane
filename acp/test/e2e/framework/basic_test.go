@@ -17,6 +17,7 @@ limitations under the License.
 package framework
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	acp "github.com/humanlayer/agentcontrolplane/acp/api/v1alpha1"
 	. "github.com/humanlayer/agentcontrolplane/acp/test/utils"
@@ -31,8 +33,8 @@ import (
 
 var _ = Describe("Basic Integration Test", func() {
 	var (
-		ctx        = testFramework.GetContext()
-		client     = testFramework.GetClient()
+		ctx        context.Context
+		client     client.Client
 		namespace  = "default"
 		uniqueID   string
 		testSecret *TestSecret
@@ -42,6 +44,10 @@ var _ = Describe("Basic Integration Test", func() {
 	)
 
 	BeforeEach(func() {
+		// Initialize context and client from framework
+		ctx = testFramework.GetContext()
+		client = testFramework.GetClient()
+		
 		// Generate unique test ID for resource names
 		uniqueID = fmt.Sprintf("test-%d", time.Now().UnixNano())
 
