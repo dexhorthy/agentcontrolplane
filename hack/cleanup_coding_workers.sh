@@ -28,51 +28,33 @@ info() {
     echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')] INFO:${NC} $1"
 }
 
-# Parse arguments
-SUFFIX="${1:-}"
-CLEANUP_MODE="${2:-all}"
+# Parse arguments  
+CLEANUP_MODE="${1:-all}"
 
 # Configuration
 REPO_NAME="agentcontrolplane"
 WORKTREES_BASE="$HOME/.humanlayer/worktrees"
 
-# Define branch names based on suffix
-if [ -n "$SUFFIX" ]; then
-    TMUX_SESSION="acp-coding-$SUFFIX"
-    declare -a BRANCH_NAMES=(
-        "acp-srs-$SUFFIX"
-        "acp-projectid-$SUFFIX"
-        "acp-taskspec-$SUFFIX"
-        "acp-channelapikey-$SUFFIX"
-        "acp-v1beta3-$SUFFIX"
-        "acp-parallel-$SUFFIX"
-        "acp-merge-$SUFFIX"
-    )
-else
-    TMUX_SESSION=""
-    declare -a BRANCH_NAMES=()
-fi
+# Configuration
+TMUX_SESSION="acp-agents"
+declare -a BRANCH_NAMES=(
+    "acp-kind-isolated-claude"
+    "acp-e2e-framework-claude" 
+    "acp-mcp-transport-claude"
+    "acp-kind-isolated-cb"
+    "acp-e2e-framework-cb"
+    "acp-mcp-transport-cb"
+    "acp-merge-claude"
+    "acp-merge-cb"
+)
 
 # Function to kill tmux session
 cleanup_tmux() {
-    if [ -z "$SUFFIX" ]; then
-        warn "No suffix provided, cleaning up all acp-coding-* sessions"
-        local sessions=$(tmux list-sessions 2>/dev/null | grep "^acp-coding-" | cut -d: -f1 || true)
-        if [ -z "$sessions" ]; then
-            info "No acp-coding-* tmux sessions found"
-        else
-            for session in $sessions; do
-                log "Killing tmux session: $session"
-                tmux kill-session -t "$session" 2>/dev/null || warn "Session $session not found"
-            done
-        fi
+    if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+        log "Killing tmux session: $TMUX_SESSION"
+        tmux kill-session -t "$TMUX_SESSION"
     else
-        if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
-            log "Killing tmux session: $TMUX_SESSION"
-            tmux kill-session -t "$TMUX_SESSION"
-        else
-            info "Tmux session not found: $TMUX_SESSION"
-        fi
+        info "Tmux session not found: $TMUX_SESSION"
     fi
 }
 
@@ -108,26 +90,10 @@ delete_branch() {
 
 # Function to cleanup all worktrees
 cleanup_worktrees() {
-    if [ -z "$SUFFIX" ]; then
-        warn "No suffix provided, cleaning up all acp-* worktrees"
-        if [ -d "$WORKTREES_BASE" ]; then
-            local worktrees=$(ls "$WORKTREES_BASE" | grep "^${REPO_NAME}_acp-" || true)
-            if [ -z "$worktrees" ]; then
-                info "No acp-* worktrees found"
-            else
-                for worktree in $worktrees; do
-                    local branch_name="${worktree#${REPO_NAME}_}"
-                    remove_worktree "$branch_name"
-                    delete_branch "$branch_name"
-                done
-            fi
-        fi
-    else
-        for branch_name in "${BRANCH_NAMES[@]}"; do
-            remove_worktree "$branch_name"
-            delete_branch "$branch_name"
-        done
-    fi
+    for branch_name in "${BRANCH_NAMES[@]}"; do
+        remove_worktree "$branch_name"
+        delete_branch "$branch_name"
+    done
     
     # Prune worktree list
     log "Pruning git worktree list..."
@@ -136,19 +102,16 @@ cleanup_worktrees() {
 
 # Function to show usage
 usage() {
-    echo "Usage: $0 [suffix] [--tmux-only|--worktrees-only]"
+    echo "Usage: $0 [--tmux-only|--worktrees-only]"
     echo
     echo "Options:"
-    echo "  suffix          - The suffix used when launching workers (optional)"
-    echo "  --tmux-only     - Only clean up tmux sessions"
+    echo "  --tmux-only     - Only clean up tmux session"
     echo "  --worktrees-only - Only clean up worktrees and branches"
     echo
-    echo "If no suffix is provided, will clean up all acp-* sessions and worktrees"
-    echo
     echo "Examples:"
-    echo "  $0                    # Clean up all acp-* sessions and worktrees"
-    echo "  $0 1234              # Clean up specific suffix"
-    echo "  $0 1234 --tmux-only  # Only clean up tmux for suffix 1234"
+    echo "  $0                    # Clean up everything (acp-agents session and all branches)"
+    echo "  $0 --tmux-only       # Only clean up tmux session"
+    echo "  $0 --worktrees-only  # Only clean up worktrees and branches"
 }
 
 # Main execution
@@ -163,10 +126,10 @@ main() {
     # Status report before cleanup
     info "=== Current Status ==="
     echo "Tmux sessions:"
-    tmux list-sessions 2>/dev/null | grep "acp-coding-" || echo "  None found"
+    tmux list-sessions 2>/dev/null | grep "acp-agents" || echo "  None found"
     echo
     echo "Git worktrees:"
-    git worktree list | grep -E "acp-|merge-" || echo "  None found"
+    git worktree list | grep -E "acp-.*-(claude|cb)" || echo "  None found"
     echo
     
     # Perform cleanup based on mode
@@ -194,10 +157,10 @@ main() {
     # Status report after cleanup
     info "=== Status After Cleanup ==="
     echo "Tmux sessions:"
-    tmux list-sessions 2>/dev/null | grep "acp-coding-" || echo "  None found"
+    tmux list-sessions 2>/dev/null | grep "acp-agents" || echo "  None found"
     echo
     echo "Git worktrees:"
-    git worktree list | grep -E "acp-|merge-" || echo "  None found"
+    git worktree list | grep -E "acp-.*-(claude|cb)" || echo "  None found"
     echo
     
     log "✅ Cleanup completed successfully!"

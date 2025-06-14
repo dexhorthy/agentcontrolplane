@@ -16,21 +16,19 @@ These scripts are designed to be reused for different management tasks by updati
 1. read any plans referenced in your base prompt
 2. create separate plan files for each sub-agent, instructing the agents to adopt the hack/agent-developer.md persona. splitting up the work as appropriate. Agents must commit every 5-10 minutes
 3. create a merge plan file that will be given to a sub agent tasked with merging the work into another branch. the merge agent will watch the agents for progress and commits and merge it in incrementally. it should have some context and be instructed to adopter the merger persona in hack/agent-merger.md
-3. create a launch_coding_workers.sh script that launches the coding agents and the merge agent 
-4. run the script and ensure the agents are working
-5. **MONITOR AGENT PROGRESS**: Use git log to check for commits on agent branches every 2 minutes with `sleep 120`. Don't write monitoring loops - just run `sleep 120` then check branches manually
-7. **LAUNCH INTEGRATION TESTING**: After all coding agents complete, create and launch an integration tester agent using the integration tester persona
-8. **MONITOR INTEGRATION RESULTS**: Wait for integration tester to commit updates to integration-test-issues.md, then pull those changes
-9. **ITERATIVE FIXING**: If integration issues remain, launch new coding agents to fix them. Otherwise, you're done.
+4. update the launch_coding_workers.sh script to support the new plan files
+5. run the script and ensure the agents are launched successfully
+6. **TASK COMPLETE**: Once agents and merger are launched, your work as manager is done. The agents will work autonomously and the merger will handle integration.
 
-## MONITORING BEST PRACTICES
+## MONITORING BEST PRACTICES (for reference)
 
 - **Sleep Pattern**: Use `sleep 120` (2 minutes) between checks, not continuous loops
 - **Branch Monitoring**: Check specific agent branches with `git log --oneline -3 [branch-name]`
 - **Commit Detection**: Look for new commit hashes at the top of the log
 - **Merge Strategy**: Use fast-forward merges when possible: `git merge [branch-name]`
-- **Integration Validation**: Always run integration tests after merging fixes
 - **EXPECT FREQUENT COMMITS**: Agents should commit every 5-10 minutes, if no commits after 15 minutes, investigate
+
+**Note**: As manager, you don't need to monitor - the merge agent handles this automatically.
 
 ## AGENT COMMITMENT REQUIREMENTS
 
@@ -51,16 +49,19 @@ All agents must commit every 5-10 minutes after meaningful progress. No work >10
 ### Script Requirements
 
 #### launch_coding_workers.sh
-- accept a suffix argument that will be used to name the worktree and tmux session, e.g. `./launch_coding_workers.sh "a"; ./launch_coding_workers.sh "b"` will create worktrees like `REPO-PLAN-a` and `REP-PLAN-b`
-- use create_worktree.sh to create a worktree for each plan file
-- Set up a single tmux session with N windows, one for each plan file. Each window has:
-  - top pane: Troubleshooting terminal
-  - bottom pane: AI coding assistant (launched second to get focus)
-  - each window is named after the plan file
-  - the session name is derived from the theme of the plan files
+- Creates a fixed tmux session named `acp-agents`
+- Creates worktrees for both Claude and CB agents for each plan file:
+  - `acp-kind-isolated-claude` / `acp-kind-isolated-cb`
+  - `acp-e2e-framework-claude` / `acp-e2e-framework-cb`
+  - `acp-mcp-transport-claude` / `acp-mcp-transport-cb`
+  - `acp-merge-claude` / `acp-merge-cb`
+- Set up a single tmux session with 8 windows:
+  - Windows 1-3: Claude agents (auto-launch Claude Code)
+  - Windows 4-6: CB agents (ready for manual agent launch)  
+  - Windows 7-8: Merge agents (both auto-launch Claude Code)
+- Each window is named with task name and agent type (e.g., "kind-isolated-claude", "e2e-framework-cb", "merge-claude")
 - Copy respective plan file to each worktree
-- Generate specialized prompts for each plan file
-- Launch troubleshooting terminal first, then claude code with: `claude "$(cat prompt.md)"` followed by a newline to accept the "trust this directory" message 
+- Generate specialized prompts for each plan file and agent type 
 
 #### cleanup_coding_workers.sh
 - Clean up all worktrees and branches
@@ -86,7 +87,7 @@ All agents must commit every 5-10 minutes after meaningful progress. No work >10
 
 ## Example Usage
 ```bash
-# Launch all coding workers
+# Launch all coding workers (both Claude and CB) in one session
 ./launch_coding_workers.sh
 
 # Clean up everything
@@ -136,20 +137,22 @@ tmux send-keys -t acp-coding-dev:9.2 C-m
 ### Monitoring Agent Progress
 ```bash
 # View all tmux windows
-tmux list-windows -t acp-coding-dev
+tmux list-windows -t acp-agents
 
 # Check commits on agent branches
-for branch in acp-srs-dev acp-projectid-dev acp-taskspec-dev; do
+for branch in acp-kind-isolated-claude acp-e2e-framework-claude acp-mcp-transport-claude; do
   echo "=== $branch ==="
   git log --oneline -3 $branch
 done
 
 # Watch a specific agent's work
-tmux attach -t acp-coding-dev
-# Then use Ctrl-b [window-number] to switch
+tmux attach -t acp-agents
+# Windows: 1-3=Claude, 4-6=CB, 7-8=Merge
+# Use Ctrl-b [window-number] to switch
 
-# Monitor merge agent's activity
-git log --oneline -10 acp-merge-dev
+# Monitor merge agent activity
+git log --oneline -10 acp-merge-claude
+git log --oneline -10 acp-merge-cb
 ```
 
 ### Updating Merge Agent's Plan
