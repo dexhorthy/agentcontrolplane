@@ -16,9 +16,30 @@ These scripts are designed to be reused for different management tasks by updati
 1. read any plans referenced in your base prompt
 2. create separate plan files for each sub-agent, instructing the agents to adopt the hack/agent-developer.md persona. splitting up the work as appropriate. Agents must commit every 5-10 minutes
 3. create a merge plan file that will be given to a sub agent tasked with merging the work into another branch. the merge agent will watch the agents for progress and commits and merge it in incrementally. it should have some context and be instructed to adopter the merger persona in hack/agent-merger.md
-4. update the launch_coding_workers.sh script to support the new plan files
-5. run the script and ensure the agents are launched successfully
+4. **CRITICAL**: ALWAYS COMMIT ANY CHANGES to scripts, Makefiles, or configuration files before running launch_coding_workers.sh. Worker worktrees will not see uncommitted changes from the manager worktree.
+5. launch each worker individually using: `./hack/launch_coding_workers.sh <branch_name> <plan_file>`
 6. **TASK COMPLETE**: Once agents and merger are launched, your work as manager is done. The agents will work autonomously and the merger will handle integration.
+
+## LAUNCHING WORKERS
+
+The launch_coding_workers.sh script takes exactly 2 arguments:
+- `<branch_name>`: The git branch name to create for the worker
+- `<plan_file>`: The path to the plan/persona file for the worker
+
+Examples:
+```bash
+# Launch integration tester
+./hack/launch_coding_workers.sh integration-testing hack/agent-integration-tester.md
+
+# Launch development agents
+./hack/launch_coding_workers.sh feature-auth plan-auth-agent.md
+./hack/launch_coding_workers.sh feature-api plan-api-agent.md
+
+# Launch merger agent
+./hack/launch_coding_workers.sh merge-main plan-merge-agent.md
+```
+
+Each call adds a new window to the `acp-agents` tmux session. The script does NOT need updating for different plan files - it works with any plan file you provide.
 
 ## MONITORING BEST PRACTICES (for reference)
 
