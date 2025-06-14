@@ -19,10 +19,13 @@ package framework
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,6 +33,72 @@ import (
 	acp "github.com/humanlayer/agentcontrolplane/acp/api/v1alpha1"
 	. "github.com/humanlayer/agentcontrolplane/acp/test/utils"
 )
+
+var _ = Describe("Framework Tests", func() {
+	It("should have working Kubernetes client", func() {
+		ctx := testFramework.GetContext()
+		client := testFramework.GetClient()
+		
+		By("creating a simple secret to test connectivity")
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "connectivity-test",
+				Namespace: "default",
+			},
+			Data: map[string][]byte{
+				"test": []byte("data"),
+			},
+		}
+		
+		err := client.Create(ctx, secret)
+		Expect(err).NotTo(HaveOccurred())
+		
+		By("verifying the secret was created")
+		createdSecret := &corev1.Secret{}
+		err = client.Get(ctx, types.NamespacedName{
+			Name:      "connectivity-test",
+			Namespace: "default",
+		}, createdSecret)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(createdSecret.Data["test"]).To(Equal([]byte("data")))
+		
+		By("cleaning up the secret")
+		err = client.Delete(ctx, secret)
+		Expect(err).NotTo(HaveOccurred())
+	})
+	
+	It("should create LLM resources", func() {
+		ctx := testFramework.GetContext()
+		client := testFramework.GetClient()
+		
+		By("creating an LLM resource")
+		llm := &acp.LLM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-llm-simple",
+				Namespace: "default",
+			},
+			Spec: acp.LLMSpec{
+				Provider: "openai",
+			},
+		}
+		
+		err := client.Create(ctx, llm)
+		Expect(err).NotTo(HaveOccurred())
+		
+		By("verifying the LLM was created")
+		createdLLM := &acp.LLM{}
+		err = client.Get(ctx, types.NamespacedName{
+			Name:      "test-llm-simple",
+			Namespace: "default",
+		}, createdLLM)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(createdLLM.Spec.Provider).To(Equal("openai"))
+		
+		By("cleaning up the LLM")
+		err = client.Delete(ctx, llm)
+		Expect(err).NotTo(HaveOccurred())
+	})
+})
 
 var _ = Describe("Basic Integration Test", func() {
 	var (
@@ -41,12 +110,27 @@ var _ = Describe("Basic Integration Test", func() {
 		testLLM    *TestLLM
 		testAgent  *TestAgent
 		testTask   *TestTask
+		mockServer *httptest.Server
 	)
 
 	BeforeEach(func() {
 		// Initialize context and client from framework
 		ctx = testFramework.GetContext()
 		client = testFramework.GetClient()
+		
+		// Setup mock server for LLM API calls
+		mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Always return success for our tests
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			
+			// Return appropriate OpenAI-compatible response
+			_, err := w.Write([]byte(`{"id":"test-id","choices":[{"message":{"content":"test"}}]}`))
+			if err != nil {
+				http.Error(w, "Error writing response", http.StatusInternalServerError)
+				return
+			}
+		}))
 		
 		// Generate unique test ID for resource names
 		uniqueID = fmt.Sprintf("test-%d", time.Now().UnixNano())
@@ -75,6 +159,11 @@ var _ = Describe("Basic Integration Test", func() {
 	})
 
 	AfterEach(func() {
+		// Clean up mock server
+		if mockServer != nil {
+			mockServer.Close()
+		}
+		
 		// Clean up test resources
 		if testTask != nil {
 			testTask.Teardown(ctx)
@@ -83,7 +172,14 @@ var _ = Describe("Basic Integration Test", func() {
 			testAgent.Teardown(ctx)
 		}
 		if testLLM != nil {
-			testLLM.Teardown(ctx)
+			// Manual cleanup for LLM since we created it manually
+			llmResource := &acp.LLM{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testLLM.Name,
+					Namespace: namespace,
+				},
+			}
+			_ = client.Delete(ctx, llmResource)
 		}
 		if testSecret != nil {
 			testSecret.Teardown(ctx)
@@ -95,9 +191,28 @@ var _ = Describe("Basic Integration Test", func() {
 		secret := testSecret.Setup(ctx, client)
 		Expect(secret).NotTo(BeNil())
 
-		By("creating LLM resource")
-		llm := testLLM.Setup(ctx, client)
-		Expect(llm).NotTo(BeNil())
+		By("creating LLM resource with mock server URL")
+		llm := &acp.LLM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testLLM.Name,
+				Namespace: namespace,
+			},
+			Spec: acp.LLMSpec{
+				Provider: "openai",
+				APIKeyFrom: &acp.APIKeySource{
+					SecretKeyRef: acp.SecretKeyRef{
+						Name: testSecret.Name,
+						Key:  "api-key",
+					},
+				},
+				Parameters: acp.BaseConfig{
+					BaseURL: mockServer.URL, // Use mock server URL
+					Model:   "test-model",
+				},
+			},
+		}
+		err := client.Create(ctx, llm)
+		Expect(err).NotTo(HaveOccurred())
 		Expect(llm.Spec.Provider).To(Equal("openai"))
 
 		By("waiting for LLM to be ready")
@@ -108,13 +223,18 @@ var _ = Describe("Basic Integration Test", func() {
 				Namespace: namespace,
 			}, updatedLLM)
 			g.Expect(err).NotTo(HaveOccurred())
+			
+			// Debug output
+			fmt.Printf("LLM Status: Ready=%v, Status=%s, StatusDetail=%s\n", 
+				updatedLLM.Status.Ready, updatedLLM.Status.Status, updatedLLM.Status.StatusDetail)
+			
 			g.Expect(updatedLLM.Status.Ready).To(BeTrue())
 		}).Should(Succeed())
 
 		By("creating Agent resource")
 		agent := testAgent.Setup(ctx, client)
 		Expect(agent).NotTo(BeNil())
-		Expect(agent.Spec.LLMRef.Name).To(Equal(llm.Name))
+		Expect(agent.Spec.LLMRef.Name).To(Equal(testLLM.Name))
 		Expect(agent.Spec.System).To(Equal("You are a helpful test assistant."))
 
 		By("waiting for Agent to be ready")
@@ -162,7 +282,7 @@ var _ = Describe("Basic Integration Test", func() {
 
 		By("verifying the complete flow worked end-to-end")
 		finalTask := &acp.Task{}
-		err := client.Get(ctx, types.NamespacedName{
+		err = client.Get(ctx, types.NamespacedName{
 			Name:      task.Name,
 			Namespace: namespace,
 		}, finalTask)
