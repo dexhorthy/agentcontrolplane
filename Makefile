@@ -59,7 +59,6 @@ setup: ## Create isolated kind cluster for this branch and set up dependencies
 	# Export kubeconfig to worktree-local location
 	@mkdir -p .kube
 	@kind export kubeconfig --name ${clustername} --kubeconfig .kube/config
-	@sed -i.bak 's|0.0.0.0:|127.0.0.1:|g' .kube/config && rm -f .kube/config.bak
 	@echo "Kubeconfig exported to .kube/config"
 	
 	# Create .envrc for automatic KUBECONFIG
