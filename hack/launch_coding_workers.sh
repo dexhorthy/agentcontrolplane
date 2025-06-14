@@ -119,8 +119,11 @@ main() {
     
     # Create session if it doesn't exist, otherwise add new window
     if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
-        log "Adding new window to existing session: $TMUX_SESSION"
-        tmux new-window -t "$TMUX_SESSION" -n "$window_name" -c "$worktree_dir"
+        # Find the highest window number and add 1
+        local max_window=$(tmux list-windows -t "$TMUX_SESSION" -F "#{window_index}" | sort -n | tail -1)
+        local new_window=$((max_window + 1))
+        log "Adding new window to existing session: $TMUX_SESSION (window $new_window)"
+        tmux new-window -t "$TMUX_SESSION:$new_window" -n "$window_name" -c "$worktree_dir"
     else
         log "Creating new tmux session: $TMUX_SESSION"
         tmux new-session -d -s "$TMUX_SESSION" -n "$window_name" -c "$worktree_dir"
