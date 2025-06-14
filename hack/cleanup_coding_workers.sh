@@ -76,6 +76,10 @@ main() {
             cd - > /dev/null
         }
         
+        # Fix permissions before removing worktree
+        log "Fixing permissions for worktree removal"
+        chmod -R 755 "$worktree_dir" 2>/dev/null || warn "Failed to fix permissions for $worktree_dir"
+        
         # Remove worktree
         git worktree remove --force "$worktree_dir" 2>/dev/null || {
             warn "Failed to remove worktree with git, removing directory manually"
@@ -98,6 +102,37 @@ main() {
     git worktree prune
     
     log "✅ Cleanup completed successfully!"
+    
+    # Show remaining resources for manager visibility
+    echo
+    info "=== REMAINING RESOURCES ==="
+    
+    echo
+    info "📺 Tmux sessions and windows:"
+    if command -v tmux &> /dev/null && tmux list-sessions 2>/dev/null; then
+        tmux list-sessions -F "Session: #{session_name}" 2>/dev/null || echo "No tmux sessions found"
+        echo
+        if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+            info "Windows in $TMUX_SESSION session:"
+            tmux list-windows -t "$TMUX_SESSION" -F "  #{window_index}: #{window_name}" 2>/dev/null || echo "  No windows found"
+        fi
+    else
+        echo "No tmux sessions found"
+    fi
+    
+    echo
+    info "🌲 Git worktrees:"
+    git worktree list | grep -E "(agentcontrolplane_|integration-)" || echo "No relevant worktrees found"
+    
+    echo
+    info "🐳 Kind clusters:"
+    if command -v kind &> /dev/null; then
+        kind get clusters 2>/dev/null || echo "No kind clusters found"
+    else
+        echo "kind command not found"
+    fi
+    
+    echo
 }
 
 # Run main
