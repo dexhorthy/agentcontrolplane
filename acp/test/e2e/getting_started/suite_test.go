@@ -25,11 +25,11 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/humanlayer/agentcontrolplane/acp/test/e2e/framework"
+	"github.com/humanlayer/agentcontrolplane/acp/test/e2e"
 )
 
 var (
-	testFramework *framework.TestFramework
+	testFramework *e2e.TestFramework
 )
 
 func TestGettingStarted(t *testing.T) {
@@ -41,7 +41,7 @@ var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	By("creating test framework")
-	testFramework = framework.NewTestFramework()
+	testFramework = e2e.NewTestFramework()
 
 	By("starting test framework with all controllers")
 	err := testFramework.Start()

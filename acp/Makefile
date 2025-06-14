@@ -75,30 +75,20 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
-.PHONY: test
-test: mocks manifests generate fmt vet setup-envtest ## Run tests.
+.PHONY: test-unit
+test-unit: mocks manifests generate fmt vet setup-envtest ## Run unit tests only.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out -failfast
 
-.PHONY: test-e2e-framework
-test-e2e-framework: mocks manifests generate fmt vet setup-envtest ## Run the new envtest-based e2e framework tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./test/e2e/framework/getting_started -v -ginkgo.v -timeout=60s
-
-# TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
-# The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
-# Prometheus and CertManager are installed by default; skip with:
-# - PROMETHEUS_INSTALL_SKIP=true
-# - CERT_MANAGER_INSTALL_SKIP=true
 .PHONY: test-e2e
-test-e2e: manifests generate fmt vet ## Run the legacy Kind-based e2e tests. Expected an isolated environment using Kind.
-	@command -v kind >/dev/null 2>&1 || { \
-		echo "Kind is not installed. Please install Kind manually."; \
-		exit 1; \
-	}
-	@kind get clusters | grep -q 'kind' || { \
-		echo "No Kind cluster is running. Please start a Kind cluster before running the e2e tests."; \
-		exit 1; \
-	}
-	go test ./test/e2e/ -v -ginkgo.v
+test-e2e: mocks manifests generate fmt vet setup-envtest ## Run e2e tests using envtest.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./test/e2e/getting_started -timeout=60s
+
+.PHONY: test-e2e-verbose
+test-e2e-verbose: mocks manifests generate fmt vet setup-envtest ## Run e2e tests with verbose output for debugging.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./test/e2e/getting_started -v -ginkgo.v -timeout=60s
+
+.PHONY: test
+test: test-unit test-e2e ## Run all tests (unit tests first, then e2e tests).
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter

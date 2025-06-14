@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package framework
+package e2e
 
 import (
 	"context"
@@ -75,7 +75,7 @@ func (f *TestFramework) doStart() error {
 
 	// Setup envtest environment
 	f.TestEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "..", "config", "crd", "bases")},
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
 	}
 
@@ -242,7 +242,7 @@ func (f *TestFramework) setupControllers() error {
 // Helper function from existing patterns
 func getFirstFoundEnvTestBinaryDir() string {
 	// This mirrors the pattern from the existing suite_test.go files
-	basePath := filepath.Join("..", "..", "..", "..", "bin", "k8s")
+	basePath := filepath.Join("..", "..", "..", "bin", "k8s")
 	entries, err := filepath.Glob(filepath.Join(basePath, "*"))
 	if err != nil {
 		return ""
