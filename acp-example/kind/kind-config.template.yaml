@@ -6,10 +6,12 @@ nodes:
       # Kubernetes API Server
       - containerPort: 6443
         hostPort: ${KIND_APISERVER_PORT}
+        listenAddress: "127.0.0.1"
         protocol: tcp
       # ACP Controller Manager HTTP gateway
       - containerPort: 8082
         hostPort: ${ACP_SERVER_PORT}
+        listenAddress: "127.0.0.1"
         protocol: tcp
 
 kubeadmConfigPatches:
