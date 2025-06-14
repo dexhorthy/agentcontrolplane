@@ -118,10 +118,11 @@ main() {
     create_worktree
     
     # Create session if it doesn't exist, otherwise add new window
+    local new_window=""
     if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
         # Find the highest window number and add 1
         local max_window=$(tmux list-windows -t "$TMUX_SESSION" -F "#{window_index}" | sort -n | tail -1)
-        local new_window=$((max_window + 1))
+        new_window=$((max_window + 1))
         log "Adding new window to existing session: $TMUX_SESSION (window $new_window)"
         tmux new-window -t "$TMUX_SESSION:$new_window" -n "$window_name" -c "$worktree_dir"
     else
@@ -131,9 +132,17 @@ main() {
     
     # Launch Claude Code in the current window
     log "Starting Claude Code in worktree: $worktree_dir"
-    tmux send-keys -t "$TMUX_SESSION:$window_name" 'claude "$(cat prompt.md)"' C-m
-    sleep 1
-    tmux send-keys -t "$TMUX_SESSION:$window_name" C-m
+    if tmux has-session -t "$TMUX_SESSION" 2>/dev/null && [ -n "${new_window:-}" ]; then
+        # Use window number for existing sessions
+        tmux send-keys -t "$TMUX_SESSION:$new_window" 'claude "$(cat prompt.md)"' C-m
+        sleep 1
+        tmux send-keys -t "$TMUX_SESSION:$new_window" C-m
+    else
+        # Use window name for new sessions
+        tmux send-keys -t "$TMUX_SESSION:$window_name" 'claude "$(cat prompt.md)"' C-m
+        sleep 1
+        tmux send-keys -t "$TMUX_SESSION:$window_name" C-m
+    fi
     
     # Summary
     log "✅ Worker launched successfully!"
