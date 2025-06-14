@@ -48,9 +48,19 @@ setup: ## Create isolated kind cluster for this branch and set up dependencies
 	# Create kind cluster with dynamic port configuration
 	@if ! kind get clusters | grep -q "^${clustername}$$"; then \
 		echo "Creating kind cluster: ${clustername}"; \
-		source .ports.env && \
+		. .ports.env && \
 		mkdir -p acp/tmp && \
+		export KIND_APISERVER_PORT && export ACP_SERVER_PORT && \
 		npx envsubst < acp-example/kind/kind-config.template.yaml > acp/tmp/kind-config.yaml && \
+		if grep -q "hostPort: *$" acp/tmp/kind-config.yaml; then \
+			echo "ERROR: Empty hostPort found in generated config. Variables not substituted properly."; \
+			echo "Generated config:"; \
+			cat acp/tmp/kind-config.yaml; \
+			echo "Environment variables:"; \
+			echo "KIND_APISERVER_PORT=$$KIND_APISERVER_PORT"; \
+			echo "ACP_SERVER_PORT=$$ACP_SERVER_PORT"; \
+			exit 1; \
+		fi && \
 		kind create cluster --name ${clustername} --config acp/tmp/kind-config.yaml; \
 	else \
 		echo "Kind cluster already exists: ${clustername}"; \
