@@ -16,3 +16,6 @@ acp/config/localdev/kustomization.yaml
 acp/config/tmp/
 acp/tmp/
 .ports.env
+
+# Kubernetes config
+.kube/
