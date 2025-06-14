@@ -19,6 +19,7 @@ package framework
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -73,9 +74,10 @@ func (f *TestFramework) doStart() error {
 	// Create context
 	f.ctx, f.cancel = context.WithCancel(context.Background())
 
-	// Setup envtest environment
+	// Setup envtest environment - find CRD path dynamically
+	crdPath := findCRDPath()
 	f.TestEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+		CRDDirectoryPaths:     []string{crdPath},
 		ErrorIfCRDPathMissing: true,
 	}
 
@@ -237,6 +239,27 @@ func (f *TestFramework) setupControllers() error {
 	}
 
 	return nil
+}
+
+// findCRDPath dynamically finds the correct path to CRD files
+func findCRDPath() string {
+	// Try different relative paths to find the CRD directory
+	candidates := []string{
+		filepath.Join("..", "..", "..", "config", "crd", "bases"),       // From acp/test/e2e/framework/
+		filepath.Join("..", "..", "..", "..", "config", "crd", "bases"), // From acp/test/e2e/framework/getting_started/
+	}
+
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			// Check if there are any yaml files in the directory
+			if files, err := filepath.Glob(filepath.Join(candidate, "*.yaml")); err == nil && len(files) > 0 {
+				return candidate
+			}
+		}
+	}
+
+	// Fallback to the standard path
+	return filepath.Join("..", "..", "..", "config", "crd", "bases")
 }
 
 // Helper function from existing patterns

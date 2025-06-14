@@ -85,6 +85,10 @@ vet: ## Run go vet against code.
 test: mocks manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out -failfast
 
+.PHONY: test-e2e-framework
+test-e2e-framework: mocks manifests generate fmt vet setup-envtest ## Run the new envtest-based e2e framework tests.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./test/e2e/framework/getting_started -v -ginkgo.v -timeout=60s
+
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
 # Prometheus and CertManager are installed by default; skip with:
@@ -118,7 +122,7 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 mocks: mockgen ## Generate all mocks using mockgen
 	@echo "Generating mocks..."
 	$(MOCKGEN) -source=internal/humanlayer/hlclient.go -destination=internal/humanlayer/mocks/mock_hlclient.go -package=mocks
-	$(MOCKGEN) -source=internal/llmclient/llm_client.go -destination=internal/llmclient/mocks/mock_llm_client.go -package=mocks  
+	$(MOCKGEN) -source=internal/llmclient/llm_client.go -destination=internal/llmclient/mocks/mock_llm_client.go -package=mocks
 	$(MOCKGEN) -source=internal/mcpmanager/mcpmanager.go -destination=internal/mcpmanager/mocks/mock_mcpmanager.go -package=mocks
 	@echo "Mock generation complete"
 
@@ -162,7 +166,7 @@ docker-load-kind: docker-build ## Load the docker image into kind.
 		echo "Error: Kind cluster '${clustername}' not found. Please run 'make setup' first."; \
 		exit 1; \
 	fi
-	kind load docker-image ${IMG} --name ${clustername} 
+	kind load docker-image ${IMG} --name ${clustername}
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
@@ -198,7 +202,7 @@ release-local: manifests generate kustomize ## Build cross-platform image (amd64
 	$(eval REPO=ghcr.io/humanlayer/agentcontrolplane)
 	$(eval RELEASE_IMG=$(REPO):$(tag))
 	@echo "Setting image to: $(RELEASE_IMG)"
-	
+
 	# Build and push image for amd64 and arm64 platforms
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name acp-builder
@@ -206,7 +210,7 @@ release-local: manifests generate kustomize ## Build cross-platform image (amd64
 	$(CONTAINER_TOOL) buildx build --push --platform=linux/amd64,linux/arm64 --tag $(RELEASE_IMG) --tag $(REPO):latest -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm acp-builder
 	rm Dockerfile.cross
-	
+
 	# Generate release YAMLs
 	mkdir -p config/release
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(RELEASE_IMG)
@@ -255,7 +259,7 @@ deploy-samples: kustomize ## Deploy samples to the K8s cluster specified in ~/.k
 
 .PHONY: show-samples
 show-samples:
-	$(KUBECTL) get llm,agent,tool,task,toolcall  -o wide; 
+	$(KUBECTL) get llm,agent,tool,task,toolcall  -o wide;
 	$(KUBECTL) get task -o yaml
 
 .PHONY: watch-samples
