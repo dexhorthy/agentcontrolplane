@@ -26,37 +26,37 @@ warn() {
 
 # Get suffix argument
 SUFFIX="${1:-$(date +%s)}"
+
 log "Using suffix: $SUFFIX"
 
 # Configuration
 REPO_NAME="agentcontrolplane"
 WORKTREES_BASE="$HOME/.humanlayer/worktrees"
-TMUX_SESSION="acp-coding-$SUFFIX"
+TMUX_SESSION="acp-agents"
 
 # Define plan files and their configurations
 declare -a PLAN_FILES=(
-    "plan-srs-implementation.md"
-    "plan-contactchannel-projectid.md"
-    "plan-contactchannel-taskspec.md"
-    "plan-channel-apikey-id.md"
-    "plan-v1beta3-events.md"
-    "plan-parallel-llm-calls-fix.md"
-    "plan-kustomization-template.md"
+    "plan-agent-kind-isolated.md"
+    "plan-agent-e2e-framework.md"
+    "plan-agent-mcp-transport.md"
 )
 
-declare -a BRANCH_NAMES=(
-    "acp-srs-$SUFFIX"
-    "acp-projectid-$SUFFIX"
-    "acp-taskspec-$SUFFIX"
-    "acp-channelapikey-$SUFFIX"
-    "acp-v1beta3-$SUFFIX"
-    "acp-parallel-$SUFFIX"
-    "acp-kustomize-$SUFFIX"
+declare -a CLAUDE_BRANCH_NAMES=(
+    "acp-kind-isolated-claude"
+    "acp-e2e-framework-claude"
+    "acp-mcp-transport-claude"
+)
+
+declare -a CB_BRANCH_NAMES=(
+    "acp-kind-isolated-cb"
+    "acp-e2e-framework-cb"
+    "acp-mcp-transport-cb"
 )
 
 # Merge agent configuration
 MERGE_PLAN="plan-merge-agent.md"
-MERGE_BRANCH="acp-merge-$SUFFIX"
+CLAUDE_MERGE_BRANCH="acp-merge-claude"
+CB_MERGE_BRANCH="acp-merge-cb"
 
 # Function to create worktree
 create_worktree() {
@@ -116,10 +116,13 @@ launch_agent_window() {
     local window_num=$1
     local branch_name=$2
     local plan_file=$3
-    local window_name=$(basename "$plan_file" .md)
+    local launch_claude=${4:-true}
+    local agent_type=${5:-"claude"}
+    local base_name="$(basename "$plan_file" .md | sed 's/plan-agent-//' | sed 's/plan-merge-agent/merge/')"
+    local window_name="${base_name}-${agent_type}"
     local worktree_dir="${WORKTREES_BASE}/${REPO_NAME}_${branch_name}"
     
-    log "Launching window $window_num: $window_name"
+    log "Launching window $window_num: $window_name (claude: $launch_claude)"
     
     # Create window
     if [ "$window_num" -eq 1 ]; then
@@ -128,20 +131,19 @@ launch_agent_window() {
         tmux new-window -t "$TMUX_SESSION:$window_num" -n "$window_name" -c "$worktree_dir"
     fi
     
-    # Split window horizontally
-    tmux split-window -t "$TMUX_SESSION:$window_num" -v -c "$worktree_dir"
-    
-    # Top pane: Troubleshooting terminal (pane 1)
-    tmux send-keys -t "$TMUX_SESSION:$window_num.1" "echo 'Troubleshooting terminal for $window_name'" C-m
-    tmux send-keys -t "$TMUX_SESSION:$window_num.1" "echo 'Branch: $branch_name'" C-m
-    tmux send-keys -t "$TMUX_SESSION:$window_num.1" "git status" C-m
-    
-    # Bottom pane: Claude Code (pane 2, with focus)
-    tmux select-pane -t "$TMUX_SESSION:$window_num.2"
-    tmux send-keys -t "$TMUX_SESSION:$window_num.2" "claude \"\$(cat prompt.md)\"" C-m
-    # Send newline to accept trust directory prompt
-    sleep 1
-    tmux send-keys -t "$TMUX_SESSION:$window_num.2" C-m
+    if [ "$launch_claude" = "true" ]; then
+        # Launch Claude Code directly in the window
+        tmux send-keys -t "$TMUX_SESSION:$window_num" "claude \"\$(cat prompt.md)\"" C-m
+        # Send newline to accept trust directory prompt
+        sleep 1
+        tmux send-keys -t "$TMUX_SESSION:$window_num" C-m
+    else
+        # Just show ready message for manual agent launch
+        tmux send-keys -t "$TMUX_SESSION:$window_num" "echo 'Ready for manual agent launch'" C-m
+        tmux send-keys -t "$TMUX_SESSION:$window_num" "echo 'Branch: $branch_name'" C-m
+        tmux send-keys -t "$TMUX_SESSION:$window_num" "echo 'Plan: $plan_file'" C-m
+        tmux send-keys -t "$TMUX_SESSION:$window_num" "echo 'To launch agent: claude \"\$(cat prompt.md)\"'" C-m
+    fi
 }
 
 # Main execution
@@ -165,23 +167,49 @@ main() {
         tmux kill-session -t "$TMUX_SESSION"
     fi
     
-    # Create worktrees for all agents
-    log "Creating worktrees..."
+    # Create worktrees for all Claude agents
+    log "Creating Claude agent worktrees..."
     for i in "${!PLAN_FILES[@]}"; do
-        create_worktree "${BRANCH_NAMES[$i]}" "${PLAN_FILES[$i]}"
+        create_worktree "${CLAUDE_BRANCH_NAMES[$i]}" "${PLAN_FILES[$i]}"
     done
     
-    # Create merge agent worktree
-    log "Creating merge agent worktree..."
-    create_worktree "$MERGE_BRANCH" "$MERGE_PLAN"
+    # Create worktrees for all CB agents
+    log "Creating CB agent worktrees..."
+    for i in "${!PLAN_FILES[@]}"; do
+        create_worktree "${CB_BRANCH_NAMES[$i]}" "${PLAN_FILES[$i]}"
+    done
     
-    # Create merge agent prompt
-    local merge_worktree="${WORKTREES_BASE}/${REPO_NAME}_${MERGE_BRANCH}"
-    cat > "$merge_worktree/prompt.md" << EOF
+    # Create merge agent worktrees
+    log "Creating merge agent worktrees..."
+    create_worktree "$CLAUDE_MERGE_BRANCH" "$MERGE_PLAN"
+    create_worktree "$CB_MERGE_BRANCH" "$MERGE_PLAN"
+    
+    # Create Claude merge agent prompt
+    local claude_merge_worktree="${WORKTREES_BASE}/${REPO_NAME}_${CLAUDE_MERGE_BRANCH}"
+    cat > "$claude_merge_worktree/prompt.md" << EOF
 Adopt the persona from hack/agent-merger.md
 
-Your task is to merge the work from the following branches into the current branch:
-${BRANCH_NAMES[@]}
+Your task is to merge the work from the following Claude agent branches into the current branch:
+${CLAUDE_BRANCH_NAMES[@]}
+
+Key requirements:
+- Read the plan in $MERGE_PLAN
+- Monitor agent branches for commits every 2 minutes
+- Merge changes in dependency order
+- Resolve conflicts appropriately
+- Maintain clean build state
+- Commit merged changes
+
+Start by reading the merge plan and checking the status of all agent branches.
+EOF
+
+    # Create CB merge agent prompt
+    local cb_merge_worktree="${WORKTREES_BASE}/${REPO_NAME}_${CB_MERGE_BRANCH}"
+    cat > "$cb_merge_worktree/prompt.md" << EOF
+Adopt the persona from hack/agent-merger.md
+
+Your task is to merge the work from the following CB agent branches into the current branch:
+${CB_BRANCH_NAMES[@]}
 
 Key requirements:
 - Read the plan in $MERGE_PLAN
@@ -196,23 +224,42 @@ EOF
     
     # Launch agent windows
     log "Launching tmux session: $TMUX_SESSION"
+    local window_num=1
+    
+    # Launch Claude agents
     for i in "${!PLAN_FILES[@]}"; do
-        launch_agent_window $((i+1)) "${BRANCH_NAMES[$i]}" "${PLAN_FILES[$i]}"
+        launch_agent_window "$window_num" "${CLAUDE_BRANCH_NAMES[$i]}" "${PLAN_FILES[$i]}" "true" "claude"
+        ((window_num++))
     done
     
-    # Launch merge agent in the last window
-    local merge_window=$((${#PLAN_FILES[@]} + 1))
-    launch_agent_window "$merge_window" "$MERGE_BRANCH" "$MERGE_PLAN"
+    # Launch CB agents
+    for i in "${!PLAN_FILES[@]}"; do
+        launch_agent_window "$window_num" "${CB_BRANCH_NAMES[$i]}" "${PLAN_FILES[$i]}" "false" "cb"
+        ((window_num++))
+    done
+    
+    # Launch merge agents
+    launch_agent_window "$window_num" "$CLAUDE_MERGE_BRANCH" "$MERGE_PLAN" "true" "claude-merge"
+    ((window_num++))
+    launch_agent_window "$window_num" "$CB_MERGE_BRANCH" "$MERGE_PLAN" "true" "cb-merge"
     
     # Summary
     log "✅ All coding workers launched successfully!"
     echo
     echo "Session: $TMUX_SESSION"
-    echo "Agents:"
+    echo "Claude agents (windows 1-3):"
     for i in "${!PLAN_FILES[@]}"; do
-        echo "  - Window $((i+1)): ${BRANCH_NAMES[$i]} (${PLAN_FILES[$i]})"
+        local task_name=$(basename "${PLAN_FILES[$i]}" .md | sed 's/plan-agent-//')
+        echo "  - Window $((i+1)): ${task_name}-claude (${CLAUDE_BRANCH_NAMES[$i]})"
     done
-    echo "  - Window $merge_window: $MERGE_BRANCH (merge agent)"
+    echo "CB agents (windows 4-6):"
+    for i in "${!PLAN_FILES[@]}"; do
+        local task_name=$(basename "${PLAN_FILES[$i]}" .md | sed 's/plan-agent-//')
+        echo "  - Window $((i+4)): ${task_name}-cb (${CB_BRANCH_NAMES[$i]})"
+    done
+    echo "Merge agents:"
+    echo "  - Window 7: merge-claude ($CLAUDE_MERGE_BRANCH)"
+    echo "  - Window 8: merge-cb ($CB_MERGE_BRANCH)"
     echo
     echo "To attach to the session:"
     echo "  tmux attach -t $TMUX_SESSION"
@@ -221,7 +268,7 @@ EOF
     echo "  Ctrl-b [window-number]"
     echo
     echo "To clean up later:"
-    echo "  ./cleanup_coding_workers.sh $SUFFIX"
+    echo "  ./cleanup_coding_workers.sh"
 }
 
 # Run main
