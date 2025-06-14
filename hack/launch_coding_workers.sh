@@ -128,7 +128,7 @@ main() {
     
     # Launch Claude Code in the current window
     log "Starting Claude Code in worktree: $worktree_dir"
-    tmux send-keys -t "$TMUX_SESSION:$window_name" "claude \"\$(cat prompt.md)\"" C-m
+    tmux send-keys -t "$TMUX_SESSION:$window_name" 'claude "$(cat prompt.md)"' C-m
     sleep 1
     tmux send-keys -t "$TMUX_SESSION:$window_name" C-m
     
