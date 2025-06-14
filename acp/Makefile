@@ -22,6 +22,12 @@ CONTAINER_TOOL ?= docker
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
+# Detect local kubeconfig and cluster name
+branchname := $(shell git branch --show-current)
+clustername := acp-$(branchname)
+KUBECONFIG ?= $(shell if [ -f ../.kube/config ]; then echo "../.kube/config"; elif [ -f .kube/config ]; then echo ".kube/config"; else echo "$$HOME/.kube/config"; fi)
+KUBECTL ?= kubectl --kubeconfig=$(KUBECONFIG)
+
 .PHONY: all
 all: build
 
@@ -90,10 +96,10 @@ test-e2e: manifests generate fmt vet ## Run the e2e tests. Expected an isolated 
 		echo "Kind is not installed. Please install Kind manually."; \
 		exit 1; \
 	}
-	@kind get clusters | grep -q 'kind' || { \
-		echo "No Kind cluster is running. Please start a Kind cluster before running the e2e tests."; \
+	@if ! kind get clusters | grep -q "^${clustername}$$"; then \
+		echo "No Kind cluster '${clustername}' is running. Please run 'make setup' first."; \
 		exit 1; \
-	}
+	fi
 	go test ./test/e2e/ -v -ginkgo.v
 
 .PHONY: lint
@@ -152,7 +158,11 @@ docker-push: ## Push docker image with the manager.
 
 .PHONY: docker-load-kind
 docker-load-kind: docker-build ## Load the docker image into kind.
-	kind load docker-image ${IMG} 
+	@if ! kind get clusters | grep -q "^${clustername}$$"; then \
+		echo "Error: Kind cluster '${clustername}' not found. Please run 'make setup' first."; \
+		exit 1; \
+	fi
+	kind load docker-image ${IMG} --name ${clustername} 
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
@@ -226,7 +236,13 @@ deploy: manifests docker-build kustomize ## Deploy controller to the K8s cluster
 
 namespace ?= default
 .PHONY: deploy-local-kind
-deploy-local-kind: manifests docker-build docker-load-kind kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+deploy-local-kind: manifests docker-build docker-load-kind kustomize ## Deploy controller to the local Kind cluster with validation.
+	@echo "Using kubeconfig: $(KUBECONFIG)"
+	@echo "Target cluster: ${clustername}"
+	@if ! kind get clusters | grep -q "^${clustername}$$"; then \
+		echo "Error: Kind cluster '${clustername}' not found. Please run 'make setup' first."; \
+		exit 1; \
+	fi
 	if [ ! -f config/localdev/kustomization.yaml ]; then \
 		cp config/localdev/kustomization.tpl.yaml config/localdev/kustomization.yaml; \
 	fi
@@ -263,7 +279,6 @@ $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
 ## Tool Binaries
-KUBECTL ?= kubectl
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest

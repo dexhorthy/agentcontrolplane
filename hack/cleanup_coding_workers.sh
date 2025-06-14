@@ -1,6 +1,6 @@
 #!/bin/bash
-# cleanup_coding_workers.sh - Cleans up worktree environments and tmux sessions
-# Usage: ./cleanup_coding_workers.sh [suffix] [--tmux-only|--worktrees-only]
+# cleanup_coding_workers.sh - Cleans up worktree environments, tmux sessions, and kind clusters
+# Usage: ./cleanup_coding_workers.sh [suffix] [--tmux-only|--worktrees-only|--clusters-only]
 
 set -euo pipefail
 
@@ -76,6 +76,19 @@ cleanup_tmux() {
     fi
 }
 
+# Function to delete kind cluster
+delete_cluster() {
+    local branch_name=$1
+    local cluster_name="acp-${branch_name}"
+    
+    if kind get clusters 2>/dev/null | grep -q "^${cluster_name}$"; then
+        log "Deleting kind cluster: $cluster_name"
+        kind delete cluster --name "$cluster_name" || warn "Failed to delete cluster: $cluster_name"
+    else
+        info "Kind cluster not found: $cluster_name"
+    fi
+}
+
 # Function to remove worktree
 remove_worktree() {
     local branch_name=$1
@@ -103,6 +116,28 @@ delete_branch() {
         git branch -D "$branch_name" 2>/dev/null || warn "Failed to delete branch: $branch_name"
     else
         info "Branch not found: $branch_name"
+    fi
+}
+
+# Function to cleanup kind clusters
+cleanup_clusters() {
+    if [ -z "$SUFFIX" ]; then
+        warn "No suffix provided, cleaning up all acp-* clusters"
+        local clusters=$(kind get clusters 2>/dev/null | grep "^acp-" || true)
+        if [ -z "$clusters" ]; then
+            info "No acp-* kind clusters found"
+        else
+            for cluster in $clusters; do
+                log "Deleting kind cluster: $cluster"
+                kind delete cluster --name "$cluster" || warn "Failed to delete cluster: $cluster"
+            done
+        fi
+    else
+        for branch_name in "${BRANCH_NAMES[@]}"; do
+            delete_cluster "$branch_name"
+        done
+        # Also clean up the main branch cluster
+        delete_cluster "$(git branch --show-current)"
     fi
 }
 
@@ -136,19 +171,21 @@ cleanup_worktrees() {
 
 # Function to show usage
 usage() {
-    echo "Usage: $0 [suffix] [--tmux-only|--worktrees-only]"
+    echo "Usage: $0 [suffix] [--tmux-only|--worktrees-only|--clusters-only]"
     echo
     echo "Options:"
-    echo "  suffix          - The suffix used when launching workers (optional)"
-    echo "  --tmux-only     - Only clean up tmux sessions"
-    echo "  --worktrees-only - Only clean up worktrees and branches"
+    echo "  suffix              - The suffix used when launching workers (optional)"
+    echo "  --tmux-only         - Only clean up tmux sessions"
+    echo "  --worktrees-only    - Only clean up worktrees and branches"
+    echo "  --clusters-only     - Only clean up kind clusters"
     echo
-    echo "If no suffix is provided, will clean up all acp-* sessions and worktrees"
+    echo "If no suffix is provided, will clean up all acp-* sessions, worktrees, and clusters"
     echo
     echo "Examples:"
-    echo "  $0                    # Clean up all acp-* sessions and worktrees"
-    echo "  $0 1234              # Clean up specific suffix"
-    echo "  $0 1234 --tmux-only  # Only clean up tmux for suffix 1234"
+    echo "  $0                      # Clean up all acp-* sessions, worktrees, and clusters"
+    echo "  $0 1234                # Clean up specific suffix"
+    echo "  $0 1234 --tmux-only    # Only clean up tmux for suffix 1234"
+    echo "  $0 --clusters-only     # Only clean up all acp-* kind clusters"
 }
 
 # Main execution
@@ -168,6 +205,9 @@ main() {
     echo "Git worktrees:"
     git worktree list | grep -E "acp-|merge-" || echo "  None found"
     echo
+    echo "Kind clusters:"
+    kind get clusters 2>/dev/null | grep "^acp-" || echo "  None found"
+    echo
     
     # Perform cleanup based on mode
     case "$CLEANUP_MODE" in
@@ -179,10 +219,15 @@ main() {
             log "Cleaning up worktrees only..."
             cleanup_worktrees
             ;;
+        --clusters-only)
+            log "Cleaning up kind clusters only..."
+            cleanup_clusters
+            ;;
         all|"")
             log "Cleaning up everything..."
             cleanup_tmux
             cleanup_worktrees
+            cleanup_clusters
             ;;
         *)
             error "Unknown cleanup mode: $CLEANUP_MODE"
@@ -198,6 +243,9 @@ main() {
     echo
     echo "Git worktrees:"
     git worktree list | grep -E "acp-|merge-" || echo "  None found"
+    echo
+    echo "Kind clusters:"
+    kind get clusters 2>/dev/null | grep "^acp-" || echo "  None found"
     echo
     
     log "✅ Cleanup completed successfully!"

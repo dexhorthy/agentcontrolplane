@@ -30,20 +30,43 @@ build: acp-build ## Build acp components
 
 branchname := $(shell git branch --show-current)
 dirname := $(shell basename ${PWD})
-setup: 
+clustername := acp-$(branchname)
+apiport := $(shell ./hack/find_free_port.sh 10000 10100)
+
+setup: ## Create isolated kind cluster for this branch and set up dependencies
 	@echo "BRANCH: ${branchname}"
 	@echo "DIRNAME: ${dirname}"
-
+	@echo "CLUSTER: ${clustername}"
+	@echo "API PORT: ${apiport}"
+	
+	# Create kind cluster with unique name and dynamic port
+	@if ! kind get clusters | grep -q "^${clustername}$$"; then \
+		echo "Creating kind cluster: ${clustername}"; \
+		kind create cluster --name ${clustername} \
+			--config <(sed 's/APIPORT/${apiport}/g' hack/kind-config.template.yaml || echo 'kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnodes:\n- role: control-plane\n  extraPortMappings:\n  - containerPort: 6443\n    hostPort: ${apiport}'); \
+	else \
+		echo "Kind cluster already exists: ${clustername}"; \
+	fi
+	
+	# Export kubeconfig to worktree-local location
+	@mkdir -p .kube
+	@kind export kubeconfig --name ${clustername} --kubeconfig .kube/config
+	@echo "Kubeconfig exported to .kube/config"
+	
+	# Create secrets with API keys
+	@if [ -n "${OPENAI_API_KEY:-}" ]; then \
+		KUBECONFIG=.kube/config kubectl create secret generic openai --from-literal=OPENAI_API_KEY=${OPENAI_API_KEY} --dry-run=client -o yaml | KUBECONFIG=.kube/config kubectl apply -f -; \
+	fi
+	@if [ -n "${ANTHROPIC_API_KEY:-}" ]; then \
+		KUBECONFIG=.kube/config kubectl create secret generic anthropic --from-literal=ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY} --dry-run=client -o yaml | KUBECONFIG=.kube/config kubectl apply -f -; \
+	fi
+	@if [ -n "${HUMANLAYER_API_KEY:-}" ]; then \
+		KUBECONFIG=.kube/config kubectl create secret generic humanlayer --from-literal=HUMANLAYER_API_KEY=${HUMANLAYER_API_KEY} --dry-run=client -o yaml | KUBECONFIG=.kube/config kubectl apply -f -; \
+	fi
+	
+	# Set up acp dependencies
 	$(MAKE) -C $(ACP_DIR) mocks deps 
 
-worktree-cluster:
-	# replicated cluster create --distribution kind --instance-type r1.small --disk 50 --version 1.33.1 --wait 5m --name ${dirname} 
-	# replicated cluster kuebconfig ${dirname} --output ./kubeconfig 
-	# kubectl --kubeconfig ./kubeconfig get node
-	# kubectl --kubeconfig ./kubeconfig create secret generic openai --from-literal=OPENAI_API_KEY=${OPENAI_API_KEY}
-	# kubectl --kubeconfig ./kubeconfig create secret generic anthropic --from-literal=ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-	# kubectl --kubeconfig ./kubeconfig create secret generic humanlayer --from-literal=HUMANLAYER_API_KEY=${HUMANLAYER_API_KEY}
-	# KUBECONFIG=./kubeconfig $(MAKE) -C $(ACP_DIR) generate deploy-local-kind
 
 check: 
 	# $(MAKE) -C $(ACP_DIR) fmt vet lint test generate 
