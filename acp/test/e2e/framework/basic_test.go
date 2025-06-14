@@ -254,7 +254,7 @@ var _ = Describe("Basic Integration Test", func() {
 		Expect(task.Spec.AgentRef.Name).To(Equal(agent.Name))
 		Expect(task.Spec.UserMessage).To(Equal("What is the capital of France?"))
 
-		By("waiting for Task to initialize")
+		By("waiting for Task to start processing")
 		Eventually(func(g Gomega) {
 			updatedTask := &acp.Task{}
 			err := client.Get(ctx, types.NamespacedName{
@@ -262,11 +262,12 @@ var _ = Describe("Basic Integration Test", func() {
 				Namespace: namespace,
 			}, updatedTask)
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(updatedTask.Status.Phase).To(Equal(acp.TaskPhaseInitializing))
+			// Task should be in some phase (not empty) and have span context
+			g.Expect(updatedTask.Status.Phase).NotTo(BeEmpty())
 			g.Expect(updatedTask.Status.SpanContext).NotTo(BeNil())
 		}).Should(Succeed())
 
-		By("waiting for Task to be ready for LLM")
+		By("waiting for Task to complete the full LLM workflow")
 		Eventually(func(g Gomega) {
 			updatedTask := &acp.Task{}
 			err := client.Get(ctx, types.NamespacedName{
@@ -274,10 +275,13 @@ var _ = Describe("Basic Integration Test", func() {
 				Namespace: namespace,
 			}, updatedTask)
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(updatedTask.Status.Phase).To(Equal(acp.TaskPhaseReadyForLLM))
-			g.Expect(updatedTask.Status.ContextWindow).To(HaveLen(2))
+			// Task should complete to FinalAnswer phase
+			g.Expect(updatedTask.Status.Phase).To(Equal(acp.TaskPhaseFinalAnswer))
+			// Should have system, user, and assistant messages
+			g.Expect(updatedTask.Status.ContextWindow).To(HaveLen(3))
 			g.Expect(updatedTask.Status.ContextWindow[0].Role).To(Equal("system"))
 			g.Expect(updatedTask.Status.ContextWindow[1].Role).To(Equal("user"))
+			g.Expect(updatedTask.Status.ContextWindow[2].Role).To(Equal("assistant"))
 		}).Should(Succeed())
 
 		By("verifying the complete flow worked end-to-end")
@@ -288,11 +292,12 @@ var _ = Describe("Basic Integration Test", func() {
 		}, finalTask)
 		Expect(err).NotTo(HaveOccurred())
 
-		// Verify task progression
-		Expect(finalTask.Status.Phase).To(Equal(acp.TaskPhaseReadyForLLM))
-		Expect(finalTask.Status.ContextWindow).To(HaveLen(2))
+		// Verify task reached final answer with complete context
+		Expect(finalTask.Status.Phase).To(Equal(acp.TaskPhaseFinalAnswer))
+		Expect(finalTask.Status.ContextWindow).To(HaveLen(3))
 		Expect(finalTask.Status.ContextWindow[0].Content).To(ContainSubstring("helpful test assistant"))
 		Expect(finalTask.Status.ContextWindow[1].Content).To(ContainSubstring("capital of France"))
+		Expect(finalTask.Status.ContextWindow[2].Content).To(ContainSubstring("test")) // Mock response
 	})
 
 	It("should handle task with missing agent gracefully", func() {
