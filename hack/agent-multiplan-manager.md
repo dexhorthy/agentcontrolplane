@@ -30,6 +30,8 @@ These scripts are designed to be reused for different management tasks by updati
 
 **Note**: As manager, you don't need to monitor - the merge agent handles this automatically.
 
+**Integration Testing**: If you are instructed to launch an integration tester, then rather than putting a specific prompt, just copy hack/agent-integration-tester.md into the agent's prompt and skip adding a plan.
+
 ## AGENT COMMITMENT REQUIREMENTS
 
 All agents must commit every 5-10 minutes after meaningful progress. No work >10 minutes without commits.
@@ -83,7 +85,7 @@ All agents must commit every 5-10 minutes after meaningful progress. No work >10
 ## Example Usage
 ```bash
 # Launch a single integration testing agent
-./hack/launch_coding_workers.sh integration-testing plan-integration-testing.md
+./hack/launch_coding_workers.sh integration-testing hack/agent-integration-tester.md
 
 # Launch multiple agents (each adds a new window to acp-agents session)
 ./hack/launch_coding_workers.sh kind-isolated plan-agent-kind-isolated.md

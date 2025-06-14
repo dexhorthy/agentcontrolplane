@@ -80,40 +80,12 @@ create_worktree() {
     cd - > /dev/null
     
     # Create prompt.md file based on plan type
-    if [[ "$PLAN_FILE" == *"integration"* ]]; then
-        cat > "$worktree_dir/prompt.md" << 'EOF'
-Adopt the persona from hack/agent-integration-tester.md
-
-Your task is to run comprehensive integration tests as described in $PLAN_FILE
-
-Key requirements:
-- Read and understand the plan completely
-- Test all merged features thoroughly  
-- Use isolated kind cluster for testing
-- Document any issues in integration-test-issues.md
-- Follow getting-started.md completely
-- Test all MCP transport types
-- Verify human approval workflows
-- Clean up resources after testing
-
-Start by reading the plan file and understanding the testing strategy.
-EOF
+    if [[ "$PLAN_FILE" == "hack/agent-integration-tester.md" ]]; then
+        # Copy the integration tester persona directly as the prompt
+        cp hack/agent-integration-tester.md "$worktree_dir/prompt.md"
     else
-        cat > "$worktree_dir/prompt.md" << 'EOF'
-Adopt the persona from hack/agent-developer.md
-
-Your task is to implement the features described in the plan file
-
-Key requirements:
-- Read and understand the plan completely
-- Follow the Dan Abramov methodology
-- Commit your changes every 5-10 minutes
-- Run tests frequently
-- Delete more code than you add
-- Keep a 20+ item TODO list
-
-Start by reading the plan file and understanding the task ahead.
-EOF
+        # Copy the plan file as the prompt for regular agents
+        cp "$PLAN_FILE" "$worktree_dir/prompt.md"
     fi
     
     log "Worktree created: $worktree_dir"
