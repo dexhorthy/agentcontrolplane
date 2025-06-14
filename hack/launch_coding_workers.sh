@@ -94,7 +94,7 @@ create_worktree() {
 # Main execution
 main() {
     local worktree_dir="${WORKTREES_BASE}/${REPO_NAME}_${BRANCH_NAME}"
-    local window_name=$(basename "$PLAN_FILE" .md | sed 's/plan-//')
+    local window_name="$BRANCH_NAME"
     
     log "Starting single worker: $BRANCH_NAME with plan: $PLAN_FILE"
     
