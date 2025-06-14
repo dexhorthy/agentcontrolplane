@@ -80,11 +80,11 @@ create_worktree() {
     cd - > /dev/null
     
     # Create prompt.md file based on plan type
-    if [[ "$PLAN_FILE" == "plan-integration-testing.md" ]]; then
+    if [[ "$PLAN_FILE" == *"integration"* ]]; then
         cat > "$worktree_dir/prompt.md" << 'EOF'
 Adopt the persona from hack/agent-integration-tester.md
 
-Your task is to run comprehensive integration tests as described in plan-integration-testing.md
+Your task is to run comprehensive integration tests as described in $PLAN_FILE
 
 Key requirements:
 - Read and understand the plan completely
